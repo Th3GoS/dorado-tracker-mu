@@ -6,8 +6,8 @@
     <title>Rastreador Colaborativo de Dorados MU</title>
     <!-- Carga de Tailwind CSS para estilos -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Carga de Tone.js para sonido de alarma de alto impacto -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.53/Tone.js"></script>
+    <!-- NOTA: Tone.js se carga ahora mediante importación de módulo en el script de abajo -->
+    
     <!-- Configuración de color y fuente -->
     <script>
         tailwind.config = {
@@ -262,6 +262,9 @@
 
     <!-- Script de Firebase y Lógica de la Aplicación -->
     <script type="module">
+        // Importación de Tone.js como módulo (¡CORRECCIÓN!)
+        import * as Tone from "https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.53/Tone.js";
+
         // Importaciones de Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -343,17 +346,6 @@
             stopSirenBtn: document.getElementById('stopSirenBtn'), // Nuevo
         };
 
-
-        /**
-         * Inicializa el contexto de audio.
-         */
-        function initializeAudio() {
-            if (typeof Tone === 'undefined') {
-                console.error("Tone.js no está cargado. No se podrá reproducir la alarma.");
-                return;
-            }
-            // No se inicializa el synth aquí, se crea al sonar.
-        }
 
         /**
          * Detiene la sirena y limpia los recursos de Tone.js.
@@ -444,14 +436,14 @@
 
         // Función para activar el AudioContext con el clic
         function activateAudio(event) {
-            if (typeof Tone === 'undefined' || isAudioActivated) return;
+            if (isAudioActivated) return;
 
-            // Intentar iniciar el contexto
+            // 1. Intentar iniciar el contexto
             Tone.start().then(() => {
                 isAudioActivated = true;
                 console.log("Contexto de Audio activado por interacción del usuario.");
                 
-                // Ocultar el banner de activación
+                // 2. Ocultar el banner de activación
                 const banner = document.getElementById('audioActivationBanner');
                 const status = document.getElementById('alarmStatus');
                 banner.classList.add('translate-y-[-100%]');
@@ -461,13 +453,10 @@
                 status.classList.add('text-mu-next');
                 status.textContent = '✅ Alarma activada. Sonará 10 minutos antes de cada invasión hasta que la detengas.';
 
-                // --- NUEVA LÓGICA DE ALARMA INMEDIATA ---
-                playConfirmationTone(); // 1. Tono de confirmación
-                
-                // 2. Forzar la comprobación y la alarma de 10 minutos sonará inmediatamente si estamos en el margen
+                // 3. Lógica de Alarma Inmediata
+                playConfirmationTone(); 
                 alarmPlayed = false; 
                 updateCountdown();
-                // --- FIN NUEVA LÓGICA ---
                 
             }).catch(e => {
                 console.error("Fallo al iniciar el AudioContext:", e);
@@ -767,7 +756,6 @@
         
         // --- 1. Inicialización de Firebase y Autenticación ---
         async function initFirebase() {
-            initializeAudio(); // Inicializar el contexto de audio
             populateScheduledTimeSelect(); 
             setDynamicScheduledTime(); 
             updateMapOptions(); 
