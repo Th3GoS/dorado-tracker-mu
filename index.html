@@ -105,10 +105,10 @@
                     </select>
                 </div>
 
-                <!-- Coordenadas -->
+                <!-- Coordenadas (ACTUALIZADO: Placeholder y Validación JS) -->
                 <div>
-                    <label for="coords" class="block text-sm font-medium text-gray-300 mb-1">Coordenadas (Ej: 120/150)</label>
-                    <input type="text" id="coords" placeholder="Ej: 120/150 o 120,150" required
+                    <label for="coords" class="block text-sm font-medium text-gray-300 mb-1">Coordenadas (Solo Números y Coma)</label>
+                    <input type="text" id="coords" placeholder="Ej: 140,50" required
                         class="w-full p-3 rounded-lg border border-gray-600 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-mu-accent">
                 </div>
                 
@@ -222,7 +222,7 @@
         let isAuthReady = false;
 
         // Path de la colección pública (utiliza el appId dinámico)
-        // Importante: La estructura ahora será /artifacts/mu-dorado-tracker-clan/public/data/golden_invasion_tracker
+        // Importante: La estructura es /artifacts/mu-dorado-tracker-clan/public/data/golden_invasion_tracker
         const COLLECTION_PATH = `/artifacts/${appId}/public/data/golden_invasion_tracker`;
 
         const elements = {
@@ -234,7 +234,15 @@
             loading: document.getElementById('loading'),
             noRecords: document.getElementById('noRecords'),
             scheduledTimeSelect: document.getElementById('scheduledTime'), // Selector de hora
+            coordsInput: document.getElementById('coords'), // Input de coordenadas
         };
+
+        // --- 0. Setup Real-Time Input Validation for Coordinates ---
+        elements.coordsInput.addEventListener('input', (e) => {
+            // Solo permite dígitos (0-9) y comas (,)
+            // Elimina cualquier otro carácter (espacios, letras, símbolos, etc.)
+            e.target.value = e.target.value.replace(/[^0-9,]/g, '');
+        });
 
         // --- Función para generar las horas programadas (10pm y luego cada 8 horas, en formato VET/UTC-4) ---
         function generateScheduledTimes() {
@@ -289,9 +297,8 @@
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
-                auth = getAuth(app);
-                setLogLevel('debug'); // Activar logs de depuración
-                
+                auth = getAuth(app); 
+
                 // 1. Intentar autenticación con el método definido (Custom Token o Anónimo)
                 await authToUse(auth);
 
@@ -312,7 +319,8 @@
             } catch (error) {
                 console.error("Error grave durante la inicialización o autenticación:", error);
                 elements.userIdDisplay.textContent = 'ID de Sesión: ERROR FATAL DE AUTENTICACIÓN';
-                showMessage(`❌ Error de Firebase: ${error.message}. Asegúrate de que Auth y Firestore estén activos en tu proyecto.`, 'mu-error');
+                // Mensaje más específico sobre la configuración de Auth.
+                showMessage(`❌ Error de Firebase: ${error.message}. CAUSA PROBABLE: El proveedor 'Anónimo' de Firebase Authentication NO está habilitado en tu proyecto.`, 'mu-error');
             }
         }
 
@@ -330,7 +338,7 @@
                 type: document.getElementById('doradoType').value,
                 server: document.getElementById('server').value.trim(),
                 map: document.getElementById('map').value,
-                coords: document.getElementById('coords').value.trim(),
+                coords: elements.coordsInput.value.trim(), // Ya validado en el input event
                 playerName: document.getElementById('playerName').value.trim(),
                 
                 // GUARDAR LA HORA PROGRAMADA SELECCIONADA
