@@ -58,7 +58,7 @@
 </head>
 <body class="font-sans text-white min-h-screen p-4 sm:p-8">
 
-    <!-- BANNER DE ACTIVACIÓN DE ALARMA (NUEVO) -->
+    <!-- BANNER DE ACTIVACIÓN DE ALARMA -->
     <div id="audioActivationBanner" 
          class="fixed inset-x-0 top-0 z-50 p-3 text-center bg-mu-error/90 text-white shadow-2xl transition duration-500 transform translate-y-0 cursor-pointer border-b-4 border-mu-accent hover:bg-mu-error">
         <div class="max-w-5xl mx-auto flex justify-between items-center">
@@ -304,9 +304,16 @@
         // --- Variables y Lógica de Audio ---
         let alarmPlayed = false;
         let toneSynth = null;
-        let isAudioActivated = false; // NUEVO: Bandera de estado del audio
+        let isAudioActivated = false; // Bandera de estado del audio
         const TEN_MINUTES_MS = 10 * 60 * 1000; 
         
+        // ===================================================================
+        // === ZONA DE DEBUG: AJUSTADO PARA QUE LA ALARMA SE ACTIVE EN LA CARGA ===
+        // 277 minutos adelanta el reloj interno a 10 minutos antes de la próxima invasión.
+        const DEBUG_MODE_OFFSET_MINUTES = 277; // <<<<<<< VALOR DE PRUEBA
+        // ¡IMPORTANTE! Vuelve a poner 0 después de probar.
+        // ===================================================================
+
         /**
          * Inicializa el contexto de audio y el sintetizador de alarma.
          * Requiere que Tone.js esté cargado globalmente.
@@ -365,6 +372,9 @@
                 status.classList.remove('text-red-400');
                 status.classList.add('text-mu-next');
                 status.textContent = '✅ Alarma activada. Sonará 10 minutos antes de cada invasión.';
+
+                // Después de activar, volvemos a llamar a updateCountdown para chequear la alarma inmediatamente
+                updateCountdown();
             }).catch(e => {
                 console.error("Fallo al iniciar el AudioContext:", e);
             });
@@ -410,7 +420,7 @@
             mapSelect: document.getElementById('map'), // Nuevo
             mapRestrictionNote: document.getElementById('mapRestrictionNote'), // Nuevo
             alarmStatus: document.getElementById('alarmStatus'), // Nuevo para el estado
-            activateAlarmBtn: document.getElementById('activateAlarmBtn'), // NUEVO Botón de activación
+            activateAlarmBtn: document.getElementById('activateAlarmBtn'), // Botón de activación
         };
         
         // --- Lógica de Restricciones del Mapa ---
@@ -489,7 +499,12 @@
 
         // --- Lógica del Contador de Tiempo y Alarma ---
         function getNextInvasionTime() {
-            const now = Date.now();
+            let now = Date.now();
+            
+            // === APLICAR OFFSET DE DEBUG (Modificación para la prueba) ===
+            now = now + (DEBUG_MODE_OFFSET_MINUTES * 60 * 1000); 
+            // ===========================================================
+
             const baseDate = new Date(now);
             
             baseDate.setUTCFullYear(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), baseDate.getUTCDate());
@@ -531,7 +546,11 @@
 
         function updateCountdown() {
             const nextInvasionTimeMs = getNextInvasionTime();
-            const now = Date.now();
+            
+            // Obtener el tiempo 'actual' ajustado por el offset de debug
+            let now = Date.now();
+            now = now + (DEBUG_MODE_OFFSET_MINUTES * 60 * 1000); 
+            
             let distance = nextInvasionTimeMs - now;
 
             if (distance < 0) {
@@ -670,6 +689,16 @@
             setDynamicScheduledTime(); 
             updateMapOptions(); 
             updateCountdown(); // Iniciar el contador
+
+            // NOTA: Agregar un indicador visual si el modo de prueba está activo
+            if (DEBUG_MODE_OFFSET_MINUTES !== 0) {
+                 const header = document.querySelector('header');
+                 const debugTag = document.createElement('p');
+                 debugTag.className = 'text-lg font-extrabold text-mu-error mt-4 bg-yellow-900/50 p-2 rounded-lg border-2 border-mu-accent';
+                 debugTag.textContent = `⚠️ MODO DE PRUEBA ACTIVO: Tiempo ajustado por ${DEBUG_MODE_OFFSET_MINUTES} minutos. ¡La alarma de 10 min debe sonar inmediatamente al activar el audio!`;
+                 header.appendChild(debugTag);
+            }
+
 
             if (!firebaseConfig.apiKey) {
                 console.error("Error: apiKey de Firebase no encontrada. La aplicación no puede inicializarse.");
@@ -913,7 +942,7 @@
                     const typeCard = document.createElement('div');
                     typeCard.className = `p-4 rounded-lg border-2 border-gray-700 bg-gray-700/50`;
                     typeCard.innerHTML = `
-                        <p class="text-base font-extrabold text-${typeColorClass} mb-2">${type} Dorado</p>
+                        <p class="text-base font-extrabold text-${typeColorClass} mb-2">${type} Dorado}</p>
                         ${top3Html}
                     `;
                     detailContainer.appendChild(typeCard);
@@ -989,7 +1018,7 @@
         // Iniciar la aplicación de Firebase
         initFirebase();
 
-        // NUEVO: Escuchar clics en el botón de activación del banner
+        // Escuchar clics en el botón de activación del banner
         document.getElementById('audioActivationBanner').addEventListener('click', activateAudio);
         document.getElementById('activateAlarmBtn').addEventListener('click', activateAudio);
     </script>
