@@ -176,15 +176,45 @@
         import { getFirestore, collection, addDoc, query, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // =====================================================================
-        // === CONFIGURACIÓN DE FIREBASE (Uso de Variables de Entorno Canvas) ===
-        // =====================================================================
-        // Accede a la configuración de Firebase proporcionada por el entorno
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        // Accede al token de autenticación personalizado
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // === CONFIGURACIÓN DE FIREBASE (¡IMPORTANTE PARA GITHUB!) ===
+        // 
+        // 1. CONFIGURACIÓN DE FIREBASE (Tus credenciales reales)
+        // ESTA CONFIGURACIÓN CONECTA LA APP AL PROYECTO 'mu-dorado-tracker-clan'
+        const YOUR_FIREBASE_CONFIG = {
+             apiKey: "AIzaSyD5nSv0oRs09sFBtZmb3c77TJWM7yq0j4s",
+             authDomain: "mu-dorado-tracker-clan.firebaseapp.com",
+             projectId: "mu-dorado-tracker-clan",
+             storageBucket: "mu-dorado-tracker-clan.firebasestorage.app",
+             messagingSenderId: "489379914106",
+             appId: "1:489379914106:web:4660c62e46d1a5aa19b6c3"
+        };
         
-        // El ID de la aplicación para el path de Firestore
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'; 
+        // 2. Lógica para cargar la configuración (Prioriza Canvas, luego usa la tuya)
+        let firebaseConfig = YOUR_FIREBASE_CONFIG;
+        let authToUse = signInAnonymously;
+        
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const canvasFirebaseConfigJson = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+        
+        if (canvasFirebaseConfigJson && canvasFirebaseConfigJson.length > 2) {
+            // Estamos en el entorno de Canvas
+            try {
+                // Revertir a la configuración de Canvas si está disponible
+                firebaseConfig = JSON.parse(canvasFirebaseConfigJson);
+            } catch (e) {
+                console.error("Error al parsear la configuración de Canvas:", e);
+            }
+            if (initialAuthToken) {
+                authToUse = (auth) => signInWithCustomToken(auth, initialAuthToken);
+            }
+        }
+        
+        // 3. ID de la aplicación para el path de Firestore
+        const appId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId || 'default-app-id'; 
+        
+        // =====================================================================
+        // === FIN DE LA CONFIGURACIÓN DE FIREBASE ===
+        // =====================================================================
         
         let db;
         let auth;
@@ -192,6 +222,7 @@
         let isAuthReady = false;
 
         // Path de la colección pública (utiliza el appId dinámico)
+        // Importante: La estructura ahora será /artifacts/mu-dorado-tracker-clan/public/data/golden_invasion_tracker
         const COLLECTION_PATH = `/artifacts/${appId}/public/data/golden_invasion_tracker`;
 
         const elements = {
@@ -220,7 +251,7 @@
                 // Convertir 0 (medianoche) o 12 (mediodía) a 12 para la visualización de 12h
                 const twelveHour = displayHour % 12 === 0 ? 12 : displayHour % 12; 
                 
-                // CAMBIO: Mostrar explícitamente VET
+                // Mostrar explícitamente VET
                 const timeString = `${twelveHour}:00 ${ampm} VET`;
                 const valueString = `${displayHour.toString().padStart(2, '0')}:00`; // Valor interno (24h)
 
@@ -238,7 +269,6 @@
             scheduledTimes.forEach(time => {
                 const option = document.createElement('option');
                 option.value = time.value;
-                // CAMBIO: Usar la string de visualización con VET
                 option.textContent = time.display;
                 elements.scheduledTimeSelect.appendChild(option);
             });
@@ -247,10 +277,12 @@
         // --- 1. Inicialización de Firebase y Autenticación ---
         async function initFirebase() {
             populateScheduledTimeSelect(); // Llenar el selector de horas
-
-            if (Object.keys(firebaseConfig).length === 0) {
-                console.error("Error: firebaseConfig está vacío. La aplicación no puede inicializarse.");
+            
+            // VERIFICACIÓN CRÍTICA: La clave API debe existir para que la inicialización funcione
+            if (!firebaseConfig.apiKey) {
+                console.error("Error: apiKey de Firebase no encontrada. La aplicación no puede inicializarse.");
                 elements.userIdDisplay.textContent = 'ID de Sesión: ERROR DE CONFIGURACIÓN';
+                showMessage("❌ ERROR FATAL: Las credenciales de Firebase no están configuradas correctamente.", 'mu-error');
                 return;
             }
             
@@ -260,12 +292,8 @@
                 auth = getAuth(app);
                 setLogLevel('debug'); // Activar logs de depuración
                 
-                // 1. Intentar autenticación con token personalizado o anónima
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // 1. Intentar autenticación con el método definido (Custom Token o Anónimo)
+                await authToUse(auth);
 
                 // 2. Escuchar cambios de estado de autenticación (el resultado final)
                 onAuthStateChanged(auth, (user) => {
@@ -275,7 +303,6 @@
                         isAuthReady = true;
                         setupRealtimeListener();
                     } else {
-                        // Esto puede ocurrir si el sign-in inicial falló, o si la sesión termina.
                         userId = null;
                         elements.userIdDisplay.textContent = 'ID de Sesión: Desconectado';
                         isAuthReady = true;
@@ -285,7 +312,7 @@
             } catch (error) {
                 console.error("Error grave durante la inicialización o autenticación:", error);
                 elements.userIdDisplay.textContent = 'ID de Sesión: ERROR FATAL DE AUTENTICACIÓN';
-                showMessage(`❌ Error de Firebase: ${error.message}. Verifica el estado de tu proyecto.`, 'mu-error');
+                showMessage(`❌ Error de Firebase: ${error.message}. Asegúrate de que Auth y Firestore estén activos en tu proyecto.`, 'mu-error');
             }
         }
 
@@ -293,8 +320,9 @@
         elements.trackerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            // Mensaje de bloqueo en el botón de envío
             if (!isAuthReady || !userId) {
-                showMessage("Por favor, espera a que la autenticación se complete.", 'mu-error');
+                showMessage("Por favor, espera a que la autenticación se complete antes de enviar.", 'mu-error');
                 return;
             }
 
@@ -329,7 +357,8 @@
                 document.getElementById('map').value = 'Lorencia';
             } catch (error) {
                 console.error("Error al guardar el registro:", error);
-                showMessage(`❌ Error al guardar: ${error.message}. Verifica tus Reglas de Seguridad de Firebase.`, 'mu-error');
+                // El error 7 PERMISSION_DENIED generalmente significa que las reglas de seguridad no permiten la escritura.
+                showMessage(`❌ Error al guardar: ${error.message}. ¡Importante! Asegúrate de que tus Reglas de Seguridad de Firestore permitan a usuarios autenticados escribir en: \`${COLLECTION_PATH}\``, 'mu-error');
             } finally {
                 elements.submitBtn.disabled = false;
                 elements.submitBtn.textContent = 'Registrar Kill';
@@ -348,7 +377,6 @@
             onSnapshot(q, (snapshot) => {
                 const records = [];
                 snapshot.forEach((doc) => {
-                    // Usar un valor por defecto para recordedTimestamp si no existe (para registros antiguos)
                     const data = doc.data();
                     records.push({ id: doc.id, ...data, recordedTimestamp: data.recordedTimestamp || 0 });
                 });
@@ -375,8 +403,7 @@
 
             elements.noRecords.classList.add('hidden');
 
-            // Necesitamos remapear el valor interno (ej. "22:00") a la string de visualización (ej. "10:00 PM VET")
-            // Reutilizamos la función de generación de horas para crear un mapa de búsqueda
+            // Mapeamos el valor interno ("22:00") a la string de visualización ("10:00 PM VET")
             const timeMap = generateScheduledTimes().reduce((acc, time) => {
                 acc[time.value] = time.display;
                 return acc;
