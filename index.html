@@ -6,8 +6,9 @@
     <title>Rastreador Colaborativo de Dorados MU</title>
     <!-- Carga de Tailwind CSS para estilos -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- NOTA: Tone.js se carga ahora mediante importación de módulo en el script de abajo -->
-    
+    <!-- Carga de Tone.js para sonido de alarma. ¡Importante! El audio requiere una interacción
+         del usuario (un clic) para activarse en la mayoría de los navegadores. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <!-- Configuración de color y fuente -->
     <script>
         tailwind.config = {
@@ -112,12 +113,6 @@
                     <p class="text-sm font-semibold text-gray-400">Tiempo Restante</p>
                 </div>
             </div>
-            <!-- Nuevo Botón de Detener Alarma -->
-            <button id="stopSirenBtn" 
-                    class="hidden w-full mt-4 py-3 bg-red-800 text-white font-extrabold rounded-lg shadow-xl hover:bg-red-700 transition duration-200"
-                    disabled>
-                DETENER SIRENA (ALARMA DE 10 MINUTOS)
-            </button>
             <!-- Mensaje de estado de la alarma -->
             <p id="alarmStatus" class="text-xs font-semibold mt-4 text-red-400">
                 La alarma requiere activación manual. ¡Haz clic en el banner superior!
@@ -262,9 +257,6 @@
 
     <!-- Script de Firebase y Lógica de la Aplicación -->
     <script type="module">
-        // Importación de Tone.js como módulo (¡CORRECCIÓN!)
-        import * as Tone from "https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.53/Tone.js";
-
         // Importaciones de Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -309,111 +301,54 @@
         let userId = null;
         let isAuthReady = false;
         
-        // --- Variables y Lógica de Audio (ACTUALIZADO PARA SIRENA) ---
-        let alarmPlayed = false; // Solo para controlar el primer disparo en la ventana
-        let sirenSynth = null; // Sintetizador para la sirena
-        let sirenLoop = null; // Loop de Tone.js para la repetición
-        let isAlarmPlaying = false; // Estado de la sirena (si está sonando activamente)
-        let isAudioActivated = false; // Bandera de estado del audio (AudioContext)
+        // --- Variables y Lógica de Audio ---
+        let alarmPlayed = false;
+        let toneSynth = null;
+        let isAudioActivated = false; // Bandera de estado del audio
         const TEN_MINUTES_MS = 10 * 60 * 1000; 
         
         // ===================================================================
         // === ZONA DE DEBUG: AJUSTADO PARA DAR UN MARGEN DE 30 SEGUNDOS ===
-        // Mantiene el offset para la prueba de activación inmediata
-        const DEBUG_MODE_OFFSET_MINUTES = 276.5; 
+        // 276.5 minutos (276 minutos y 30 segundos) adelante el reloj interno 
+        // para que inicie la cuenta atrás en 10 minutos y 30 segundos restantes.
+        const DEBUG_MODE_OFFSET_MINUTES = 276.5; // <<<<<<< VALOR DE PRUEBA AJUSTADO
         // ===================================================================
 
-        const elements = {
-            userIdDisplay: document.getElementById('userIdDisplay'),
-            trackerForm: document.getElementById('trackerForm'),
-            submitBtn: document.getElementById('submitBtn'),
-            formMessage: document.getElementById('formMessage'),
-            recordsTableBody: document.getElementById('recordsTableBody'),
-            loading: document.getElementById('loading'),
-            noRecords: document.getElementById('noRecords'),
-            scheduledTimeSelect: document.getElementById('scheduledTime'), 
-            coordsInput: document.getElementById('coords'), 
-            serverSelect: document.getElementById('server'), 
-            analysisContainer: document.getElementById('analysisContainer'), 
-            noAnalysis: document.getElementById('noAnalysis'), 
-            countdownDisplay: document.getElementById('countdownDisplay'),
-            localTimeDisplay: document.getElementById('localTimeDisplay'),
-            doradoTypeSelect: document.getElementById('doradoType'), 
-            mapSelect: document.getElementById('map'), 
-            mapRestrictionNote: document.getElementById('mapRestrictionNote'), 
-            alarmStatus: document.getElementById('alarmStatus'), 
-            activateAlarmBtn: document.getElementById('activateAlarmBtn'),
-            stopSirenBtn: document.getElementById('stopSirenBtn'), // Nuevo
-        };
-
-
         /**
-         * Detiene la sirena y limpia los recursos de Tone.js.
+         * Inicializa el contexto de audio y el sintetizador de alarma.
+         * Requiere que Tone.js esté cargado globalmente.
          */
-        function stopAlarm() {
-            if (!isAlarmPlaying) return;
-
-            Tone.Transport.stop();
-            if (sirenLoop) sirenLoop.dispose();
-            if (sirenSynth) sirenSynth.dispose();
-            sirenLoop = null;
-            sirenSynth = null;
-            isAlarmPlaying = false;
-            
-            // Resetear la bandera de disparo para el próximo ciclo
-            alarmPlayed = false; 
-
-            // UI Update
-            elements.stopSirenBtn.classList.add('hidden');
-            elements.stopSirenBtn.setAttribute('disabled', 'true');
-            console.log("Sirena de alto impacto detenida manualmente.");
+        function initializeAudio() {
+            if (typeof Tone === 'undefined') {
+                console.error("Tone.js no está cargado. No se podrá reproducir la alarma.");
+                return;
+            }
+            if (toneSynth) return;
+            try {
+                // Inicializar un sintetizador de ruido simple (White Noise)
+                toneSynth = new Tone.NoiseSynth({
+                    noise: { type: 'white' },
+                    envelope: { attack: 0.005, decay: 0.3, sustain: 0, release: 0.2 }
+                }).toDestination();
+                console.log("Sintetizador de alarma inicializado.");
+            } catch (e) {
+                console.error("Error inicializando Tone.js:", e);
+            }
         }
 
-
         /**
-         * Reproduce la sirena de alto impacto (loopeando).
+         * Reproduce el sonido de la alarma (dos pulsos de ruido).
          */
         function playAlarmSound() {
-            if (!isAudioActivated || isAlarmPlaying) return; 
-
+            if (!isAudioActivated) return; // Solo sonar si está activado
+            
             try {
-                // Configurar un simple delay/ping-pong para un efecto más amplio
-                const feedbackDelay = new Tone.FeedbackDelay("8n", 0.5).toDestination();
-                feedbackDelay.delayTime.value = 0.08;
-                feedbackDelay.wet.value = 0.4;
-
-                sirenSynth = new Tone.PolySynth(Tone.Synth, {
-                    oscillator: { type: "square" }, // Onda cuadrada para un sonido áspero
-                    envelope: {
-                        attack: 0.001, // Ataque muy rápido
-                        decay: 0.1,
-                        sustain: 0.1,
-                        release: 0.1
-                    },
-                    volume: -6 // Ajuste de volumen para mayor decibelio
-                }).connect(feedbackDelay);
-
-                // Crear un patrón de sirena rápido y discordante
-                const notes = ["C6", "G5", "C6", "G5"];
-                let noteIndex = 0;
-
-                sirenLoop = new Tone.Loop(time => {
-                    const currentNote = notes[noteIndex % notes.length];
-                    sirenSynth.triggerAttackRelease(currentNote, "16n", time);
-                    noteIndex++;
-                }, "8n").start(0); 
-
-                // Iniciar el transporte (el motor de tiempo de Tone.js)
-                Tone.Transport.start();
-
-                isAlarmPlaying = true;
-                
-                // UI Update: Mostrar el botón de detener
-                elements.stopSirenBtn.classList.remove('hidden');
-                elements.stopSirenBtn.removeAttribute('disabled');
-
-                console.log("¡Sirena de ALTO IMPACTO activada! 10 minutos restantes.");
-
+                if (toneSynth) {
+                    // Reproducir un pulso de ruido corto (2 pulsos rápidos)
+                    toneSynth.triggerAttackRelease("16n", Tone.now());
+                    toneSynth.triggerAttackRelease("16n", Tone.now() + 0.3); // Segundo pulso
+                    console.log("¡Alarma de invasión activada! 10 minutos restantes.");
+                }
             } catch (e) {
                  console.error("Error al reproducir la alarma. Asegúrate de que el AudioContext esté activo.", e);
             }
@@ -423,10 +358,14 @@
          * Reproduce un tono de confirmación simple (tono musical) al hacer clic.
          */
         function playConfirmationTone() {
-            if (!isAudioActivated) return;
+            if (!isAudioActivated || !toneSynth) return;
             try {
+                // Un tono de éxito (C5) para confirmar la activación del audio.
                 const synth = new Tone.Synth().toDestination();
                 synth.triggerAttackRelease("C5", "8n"); 
+                console.log("Tono de confirmación de activación de audio reproducido.");
+                
+                // Limpiar el sintetizador temporal después de un corto tiempo
                 setTimeout(() => synth.dispose(), 500);
             } catch (e) {
                 console.error("Error al reproducir tono de confirmación:", e);
@@ -436,37 +375,38 @@
 
         // Función para activar el AudioContext con el clic
         function activateAudio(event) {
-            if (isAudioActivated) return;
+            if (typeof Tone === 'undefined' || isAudioActivated) return;
 
-            // 1. Intentar iniciar el contexto
+            // Intentar iniciar el contexto
             Tone.start().then(() => {
                 isAudioActivated = true;
                 console.log("Contexto de Audio activado por interacción del usuario.");
                 
-                // 2. Ocultar el banner de activación
+                // Ocultar el banner de activación
                 const banner = document.getElementById('audioActivationBanner');
                 const status = document.getElementById('alarmStatus');
                 banner.classList.add('translate-y-[-100%]');
-                setTimeout(() => banner.style.display = 'none', 500); 
+                setTimeout(() => banner.style.display = 'none', 500); // Ocultar después de la transición
                 
                 status.classList.remove('text-red-400');
                 status.classList.add('text-mu-next');
-                status.textContent = '✅ Alarma activada. Sonará 10 minutos antes de cada invasión hasta que la detengas.';
+                status.textContent = '✅ Alarma activada. Sonará 10 minutos antes de cada invasión.';
 
-                // 3. Lógica de Alarma Inmediata
-                playConfirmationTone(); 
-                alarmPlayed = false; 
+                // --- NUEVA LÓGICA DE CONFIRMACIÓN Y ALARMA INMEDIATA ---
+                playConfirmationTone(); // 1. Tono de confirmación (siempre)
+                
+                // 2. Dado que el offset está activo (DEBUG_MODE_OFFSET_MINUTES != 0), 
+                //    forzamos la comprobación y la alarma de 10 minutos sonará inmediatamente
+                alarmPlayed = false; // Resetear bandera para que la alarma de 10 minutos suene
                 updateCountdown();
+                // --- FIN NUEVA LÓGICA ---
                 
             }).catch(e => {
                 console.error("Fallo al iniciar el AudioContext:", e);
             });
-            event.stopPropagation(); 
+            event.stopPropagation(); // Prevenir que se propague
         }
         // --- Fin Lógica de Audio ---
-
-        // Asignar el listener al botón de detención
-        elements.stopSirenBtn.addEventListener('click', stopAlarm);
 
 
         // Path de la colección pública (utiliza el appId dinámico)
@@ -487,6 +427,28 @@
             // Si el valor es null, permite todos los mapas relevantes por defecto (Lorencia, Noria, Devias)
         };
 
+        const elements = {
+            userIdDisplay: document.getElementById('userIdDisplay'),
+            trackerForm: document.getElementById('trackerForm'),
+            submitBtn: document.getElementById('submitBtn'),
+            formMessage: document.getElementById('formMessage'),
+            recordsTableBody: document.getElementById('recordsTableBody'),
+            loading: document.getElementById('loading'),
+            noRecords: document.getElementById('noRecords'),
+            scheduledTimeSelect: document.getElementById('scheduledTime'), 
+            coordsInput: document.getElementById('coords'), 
+            serverSelect: document.getElementById('server'), 
+            analysisContainer: document.getElementById('analysisContainer'), 
+            noAnalysis: document.getElementById('noAnalysis'), 
+            countdownDisplay: document.getElementById('countdownDisplay'),
+            localTimeDisplay: document.getElementById('localTimeDisplay'),
+            doradoTypeSelect: document.getElementById('doradoType'), // Nuevo
+            mapSelect: document.getElementById('map'), // Nuevo
+            mapRestrictionNote: document.getElementById('mapRestrictionNote'), // Nuevo
+            alarmStatus: document.getElementById('alarmStatus'), // Nuevo para el estado
+            activateAlarmBtn: document.getElementById('activateAlarmBtn'), // Botón de activación
+        };
+        
         // --- Lógica de Restricciones del Mapa ---
         function updateMapOptions() {
             const selectedDoradoType = elements.doradoTypeSelect.value;
@@ -621,10 +583,6 @@
             if (distance < 0) {
                 // La invasión ha pasado, reiniciar la bandera para el próximo ciclo
                 alarmPlayed = false; 
-                // Asegurar que la sirena se detenga si se le olvidó al usuario
-                if (isAlarmPlaying) {
-                    stopAlarm();
-                }
                 setTimeout(updateCountdown, 1000);
                 return;
             }
@@ -633,7 +591,7 @@
             const ALARM_WINDOW_START_MS = TEN_MINUTES_MS + 30000; // 10 minutos y 30 segundos
             const ALARM_WINDOW_END_MS = TEN_MINUTES_MS - 20000;   // 9 minutos y 40 segundos
             
-            // Chequear si estamos en la ventana de alarma 
+            // Chequear si estamos en la ventana de alarma (30 segundos antes de 10 minutos y 20 segundos después)
             if (distance <= ALARM_WINDOW_START_MS && distance >= ALARM_WINDOW_END_MS) {
                 if (!alarmPlayed) {
                     playAlarmSound();
@@ -756,6 +714,7 @@
         
         // --- 1. Inicialización de Firebase y Autenticación ---
         async function initFirebase() {
+            initializeAudio(); // Inicializar el sintetizador de audio
             populateScheduledTimeSelect(); 
             setDynamicScheduledTime(); 
             updateMapOptions(); 
@@ -766,7 +725,7 @@
                  const header = document.querySelector('header');
                  const debugTag = document.createElement('p');
                  debugTag.className = 'text-lg font-extrabold text-mu-error mt-4 bg-yellow-900/50 p-2 rounded-lg border-2 border-mu-accent';
-                 debugTag.textContent = `⚠️ MODO DE PRUEBA ACTIVO: Tiempo ajustado por ${DEBUG_MODE_OFFSET_MINUTES} minutos. ¡La sirena de 10 min debe sonar inmediatamente al activar el audio!`;
+                 debugTag.textContent = `⚠️ MODO DE PRUEBA ACTIVO: Tiempo ajustado por ${DEBUG_MODE_OFFSET_MINUTES} minutos. ¡La alarma de 10 min debe sonar inmediatamente al activar el audio!`;
                  header.appendChild(debugTag);
             }
 
