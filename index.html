@@ -129,21 +129,25 @@
                     </select>
                 </div>
                 
-                <!-- Mapa -->
+                <!-- Mapa - AHORA DINÁMICO SEGÚN EL TIPO DE DORADO -->
                 <div>
-                    <label for="map" class="block text-sm font-medium text-gray-300 mb-1">Mapa</label>
+                    <label for="map" class="block text-sm font-medium text-gray-300 mb-1">
+                        Mapa 
+                        <span id="mapRestrictionNote" class="text-xs text-red-400 font-semibold">(Restricción activa)</span>
+                    </label>
                     <select id="map" required
                         class="w-full p-3 rounded-lg border border-gray-600 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-mu-accent">
+                        <!-- Las opciones del mapa son fijas, la disponibilidad se controla con JS -->
                         <option value="Lorencia">Lorencia</option>
                         <option value="Noria">Noria</option>
                         <option value="Devias">Devias</option>
-                        <option value="Dungeon">Dungeon</option>
-                        <option value="Lost Tower">Lost Tower</option>
-                        <option value="Tarkan">Tarkan</option>
-                        <option value="Atlans">Atlans</option>
-                        <option value="Aida">Aida</option>
-                        <option value="Kalima">Kalima</option>
-                        <option value="Otros">Otros</option>
+                        <option value="Dungeon" disabled>Dungeon (No Dorado aquí)</option>
+                        <option value="Lost Tower" disabled>Lost Tower (No Dorado aquí)</option>
+                        <option value="Tarkan" disabled>Tarkan (No Dorado aquí)</option>
+                        <option value="Atlans" disabled>Atlans (No Dorado aquí)</option>
+                        <option value="Aida" disabled>Aida (No Dorado aquí)</option>
+                        <option value="Kalima" disabled>Kalima (No Dorado aquí)</option>
+                        <option value="Otros" disabled>Otros (No Dorado aquí)</option>
                     </select>
                 </div>
 
@@ -154,7 +158,7 @@
                         class="w-full p-3 rounded-lg border border-gray-600 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-mu-accent">
                 </div>
                 
-                <!-- Hora Programada de Invasión (VET) - AHORA CON SELECCIÓN DINÁMICA -->
+                <!-- Hora Programada de Invasión (VET) - CON SELECCIÓN DINÁMICA -->
                 <div>
                     <label for="scheduledTime" class="block text-sm font-medium text-gray-300 mb-1">
                         Hora Programada (VET) 
@@ -292,6 +296,15 @@
         const FIXED_UTC_HOURS = [2, 10, 18]; 
         const GOLDEN_TYPES = ['Goblin', 'Soldier', 'Titan', 'Budge Dragon'];
 
+        // Mapeo de restricciones: Dorado -> Mapa permitido
+        const MAP_RESTRICTIONS = {
+            'Goblin': ['Noria'],
+            'Budge Dragon': ['Lorencia'],
+            'Soldier': ['Devias'],
+            'Titan': ['Devias'],
+            // Si el valor es null, permite todos los mapas relevantes por defecto (Lorencia, Noria, Devias)
+        };
+
         const elements = {
             userIdDisplay: document.getElementById('userIdDisplay'),
             trackerForm: document.getElementById('trackerForm'),
@@ -307,9 +320,67 @@
             noAnalysis: document.getElementById('noAnalysis'), 
             countdownDisplay: document.getElementById('countdownDisplay'),
             localTimeDisplay: document.getElementById('localTimeDisplay'),
+            doradoTypeSelect: document.getElementById('doradoType'), // Nuevo
+            mapSelect: document.getElementById('map'), // Nuevo
+            mapRestrictionNote: document.getElementById('mapRestrictionNote'), // Nuevo
         };
+        
+        // --- Lógica de Restricciones del Mapa (¡NUEVO!) ---
+        /**
+         * Actualiza el selector de mapas para que solo sean seleccionables los permitidos
+         * para el tipo de dorado actual.
+         */
+        function updateMapOptions() {
+            const selectedDoradoType = elements.doradoTypeSelect.value;
+            const allowedMaps = MAP_RESTRICTIONS[selectedDoradoType];
+            
+            let restrictionActive = false;
+            let firstAllowedMap = null;
 
-        // --- Lógica de la Hora Preseleccionada (¡NUEVO!) ---
+            // Recorrer todas las opciones del selector de mapa
+            Array.from(elements.mapSelect.options).forEach(option => {
+                const mapValue = option.value;
+                
+                // Si hay una restricción definida para este tipo de dorado
+                if (allowedMaps) {
+                    restrictionActive = true;
+                    if (allowedMaps.includes(mapValue)) {
+                        // Permitir la opción
+                        option.disabled = false;
+                        if (!firstAllowedMap) {
+                            firstAllowedMap = mapValue;
+                        }
+                    } else if (mapValue !== "") {
+                        // Deshabilitar la opción (excepto la opción vacía si existiera, aunque no aplica aquí)
+                        option.disabled = true;
+                    }
+                } else {
+                    // Si no hay restricciones (ej. por si se agregan tipos futuros), permitir los mapas por defecto
+                    // y deshabilitar los que están marcados como "No Dorado aquí" en el HTML
+                    if (option.disabled && option.textContent.includes('No Dorado aquí')) {
+                        // Dejar deshabilitado si está marcado explícitamente en el HTML
+                    } else {
+                        option.disabled = false;
+                    }
+                }
+            });
+
+            // Si hay restricción, forzar la selección al primer mapa permitido
+            if (restrictionActive && firstAllowedMap) {
+                 elements.mapSelect.value = firstAllowedMap;
+                 elements.mapRestrictionNote.classList.remove('hidden');
+            } else {
+                 elements.mapRestrictionNote.classList.add('hidden');
+            }
+        }
+        
+        // Llamar a la función al cambiar el tipo de dorado
+        elements.doradoTypeSelect.addEventListener('change', updateMapOptions);
+
+        // --- Fin Lógica de Restricciones del Mapa ---
+
+
+        // --- Lógica de la Hora Preseleccionada (Se mantiene) ---
         /**
          * Determina la hora de invasión VET (UTC-4) que está actualmente activa
          * o la más reciente, basándose en la hora local del usuario.
@@ -429,16 +500,13 @@
 
             setTimeout(updateCountdown, 1000);
         }
-        updateCountdown();
-        // --- Fin Lógica del Contador de Tiempo ---
-
-
-        // --- Lógica de Validación de Inputs ---
+        
+        // --- Lógica de Validación de Inputs (Se mantiene) ---
 
         function removeErrorClass(element) {
             element.classList.remove('input-error');
         }
-
+        
         // Validación de Coordenadas: Requiere dos números separados por coma (X,Y)
         elements.coordsInput.addEventListener('input', (e) => {
             // Permite solo dígitos y una coma
@@ -479,6 +547,16 @@
             } else {
                 removeErrorClass(elements.serverSelect);
             }
+            
+            // 4. VALIDACIÓN EXTRA DE RESTRICCIÓN DE MAPA
+            const allowedMaps = MAP_RESTRICTIONS[data.type];
+            if (allowedMaps && !allowedMaps.includes(data.map)) {
+                if (isValid) errorMsg = `❌ El ${data.type} Dorado solo aparece en ${allowedMaps.join(' o ')}. Por favor, selecciona el mapa correcto.`;
+                isValid = false;
+                elements.mapSelect.classList.add('input-error');
+            } else {
+                 removeErrorClass(elements.mapSelect);
+            }
 
 
             if (!isValid) {
@@ -490,7 +568,7 @@
         // --- Fin Lógica de Validación de Inputs ---
 
 
-        // --- Función para generar las horas programadas (VET) ---
+        // --- Función para generar las horas programadas (VET) (Se mantiene) ---
         function generateScheduledTimes() {
             const times = [];
             // Las horas de inicio (24h) en VET/UTC-4: 22:00, 06:00, 14:00
@@ -508,7 +586,7 @@
             return times;
         }
 
-        // --- Rellenar el selector de horas al inicio ---
+        // --- Rellenar el selector de horas al inicio (Se mantiene) ---
         function populateScheduledTimeSelect() {
             const scheduledTimes = generateScheduledTimes();
             elements.scheduledTimeSelect.innerHTML = ''; // Limpiar opciones
@@ -524,7 +602,9 @@
         async function initFirebase() {
             populateScheduledTimeSelect(); 
             setDynamicScheduledTime(); // Preseleccionar la hora activa
-            
+            updateMapOptions(); // Aplicar las restricciones de mapa iniciales
+            updateCountdown(); // Iniciar el contador
+
             if (!firebaseConfig.apiKey) {
                 console.error("Error: apiKey de Firebase no encontrada. La aplicación no puede inicializarse.");
                 elements.userIdDisplay.textContent = 'ID de Sesión: ERROR DE CONFIGURACIÓN';
@@ -559,7 +639,7 @@
             }
         }
 
-        // --- 2. Función de Guardado de Registro ---
+        // --- 2. Función de Guardado de Registro (Se mantiene) ---
         elements.trackerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
@@ -571,13 +651,13 @@
             const playerNameInput = document.getElementById('playerName');
 
             const data = {
-                type: document.getElementById('doradoType').value,
-                server: elements.serverSelect.value, // Por defecto es PandaMU-1
-                map: document.getElementById('map').value,
-                coords: elements.coordsInput.value.trim().replace(/\s/g, ''), // Asegura que se remuevan espacios después de la coma
+                type: elements.doradoTypeSelect.value, // Usar la referencia del objeto
+                server: elements.serverSelect.value, 
+                map: elements.mapSelect.value, // Usar la referencia del objeto
+                coords: elements.coordsInput.value.trim().replace(/\s/g, ''), 
                 playerName: playerNameInput.value.trim(),
                 
-                scheduledTime: elements.scheduledTimeSelect.value, // Usa el valor preseleccionado/elegido
+                scheduledTime: elements.scheduledTimeSelect.value, 
                 
                 recordedTimestamp: Date.now(), 
                 recordedBy: userId,
@@ -599,8 +679,8 @@
                 
                 // Limpiar solo los campos de ubicación/tipo/coords. La hora se preselecciona dinámicamente de nuevo.
                 elements.coordsInput.value = ''; 
-                document.getElementById('doradoType').value = 'Goblin';
-                document.getElementById('map').value = 'Lorencia';
+                elements.doradoTypeSelect.value = 'Goblin'; // Volver a Goblin (Noria)
+                updateMapOptions(); // Aplicar la restricción de mapa (forzar a Noria)
                 setDynamicScheduledTime(); // Volver a asegurar la selección dinámica después del envío
 
             } catch (error) {
@@ -638,7 +718,7 @@
             });
         }
 
-        // --- 4. Lógica de Análisis y Predicción de TOP UBICACIONES POR TIPO ---
+        // --- 4. Lógica de Análisis y Predicción de TOP UBICACIONES POR TIPO (Se mantiene) ---
 
         /**
          * Calcula el Top 3 de ubicaciones para un conjunto de registros.
@@ -779,7 +859,7 @@
                     const typeColorClass = type.toLowerCase().replace(' ', '-');
                     
                     const typeCard = document.createElement('div');
-                    typeCard.className = `p-4 rounded-lg border-2 border-mu-dark bg-gray-700/50`;
+                    typeCard.className = `p-4 rounded-lg border-2 border-gray-700 bg-gray-700/50`;
                     typeCard.innerHTML = `
                         <p class="text-base font-extrabold text-${typeColorClass} mb-2">${type} Dorado}</p>
                         ${top3Html}
