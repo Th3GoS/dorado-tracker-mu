@@ -63,7 +63,7 @@
             </p>
         </header>
 
-        <!-- Nuevo: Contador de Invasión Global -->
+        <!-- Contador de Invasión Global -->
         <div id="countdownSection" class="bg-gray-800 p-6 sm:p-8 rounded-xl shadow-2xl mb-10 text-center border-2 border-mu-next">
             <h2 class="text-xl font-bold text-mu-next mb-4 flex justify-center items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -162,18 +162,18 @@
             <p id="formMessage" class="mt-4 text-center text-sm hidden"></p>
         </div>
 
-        <!-- Sección de Análisis y Predicciones -->
+        <!-- Sección de Análisis y Predicciones (FOCUSED ON LOCATION PATTERN) -->
         <div class="bg-mu-dark p-6 sm:p-8 rounded-xl shadow-2xl mb-10">
             <h2 class="text-2xl font-semibold text-mu-next mb-5 flex items-center">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
-                Análisis de Patrones y Próximos Spawns Estimados
+                Análisis de Patrones y Patrones de Spawn Históricos
             </h2>
             <div id="predictionList" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <!-- Las predicciones se insertarán aquí -->
                 <p id="noPredictions" class="md:col-span-3 text-center text-gray-500">
-                    Ingresa al menos 3 registros (uno por ciclo) para comenzar el análisis.
+                    Ingresa al menos 2 registros por ciclo para comenzar a detectar patrones de ubicación.
                 </p>
             </div>
         </div>
@@ -231,7 +231,7 @@
         let firebaseConfig = YOUR_FIREBASE_CONFIG;
         let authToUse = signInAnonymously;
         
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_token : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         const canvasFirebaseConfigJson = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
         
         if (canvasFirebaseConfigJson && canvasFirebaseConfigJson.length > 2) {
@@ -283,7 +283,6 @@
             coordsInput: document.getElementById('coords'), 
             predictionList: document.getElementById('predictionList'), 
             noPredictions: document.getElementById('noPredictions'),
-            // Nuevos elementos para el contador
             countdownDisplay: document.getElementById('countdownDisplay'),
             localTimeDisplay: document.getElementById('localTimeDisplay'),
         };
@@ -392,7 +391,7 @@
                 const ampm = displayHour >= 12 ? 'PM' : 'AM';
                 const twelveHour = displayHour % 12 === 0 ? 12 : displayHour % 12; 
                 
-                const timeString = `${twelveHour}:00 ${ampm} VET`;
+                const timeString = `${displayHour.toString().padStart(2, '0')}:00 VET`; // Usar formato 24h para el valor de registro
                 const valueString = `${displayHour.toString().padStart(2, '0')}:00`; 
 
                 times.push({ value: valueString, display: timeString });
@@ -523,30 +522,68 @@
             });
         }
 
-        // --- 4. Lógica de Análisis y Predicción ---
+        // --- 4. Lógica de Análisis y Predicción de UBICACIÓN ---
         function analyzeAndDisplayPredictions(records) {
             const scheduledTimes = generateScheduledTimes(); 
             const latestKills = {};
 
-            // 1. Encontrar el último kill para cada ciclo programado
-            records.forEach(record => {
-                const timeSlot = record.scheduledTime;
-                if (record.recordedTimestamp > (latestKills[timeSlot]?.recordedTimestamp || 0)) {
-                    latestKills[timeSlot] = record;
+            // 1. Agrupar registros por hora programada y encontrar el último kill (para el tiempo de respawn)
+            const groupedRecords = records.reduce((acc, record) => {
+                const slot = record.scheduledTime;
+                if (!acc[slot]) {
+                    acc[slot] = [];
                 }
-            });
+                acc[slot].push(record);
+                
+                if (record.recordedTimestamp > (latestKills[slot]?.recordedTimestamp || 0)) {
+                    latestKills[slot] = record;
+                }
+                return acc;
+            }, {});
 
             elements.predictionList.innerHTML = ''; 
             let predictionCount = 0;
 
             scheduledTimes.forEach(slot => {
                 const latestKill = latestKills[slot.value];
+                const slotRecords = groupedRecords[slot.value] || [];
                 const card = document.createElement('div');
                 card.className = 'bg-gray-700 p-4 rounded-lg shadow-lg';
                 
                 let lastKillText = 'N/A';
-                let nextSpawnText = 'No hay registros';
+                let nextSpawnTimeText = 'No hay registros';
                 let isPastDue = false;
+                
+                // === LÓGICA DE PATRÓN DE UBICACIÓN ===
+                let patternText = 'Insuficientes datos para patrón.';
+                let locationHintClass = 'text-gray-400';
+                
+                if (slotRecords.length >= 2) { 
+                    const locationCounts = {};
+                    
+                    slotRecords.forEach(record => {
+                        const key = `${record.map}@${record.coords}`;
+                        locationCounts[key] = (locationCounts[key] || 0) + 1;
+                    });
+
+                    let maxCount = 0;
+                    let mostFrequentKey = null;
+
+                    for (const key in locationCounts) {
+                        if (locationCounts[key] > maxCount) {
+                            maxCount = locationCounts[key];
+                            mostFrequentKey = key;
+                        }
+                    }
+
+                    if (mostFrequentKey) {
+                        const [mapPattern, coordsPattern] = mostFrequentKey.split('@');
+                        patternText = `${mapPattern} (${coordsPattern})`;
+                        locationHintClass = 'text-mu-accent'; // Destacar el patrón
+                    }
+                }
+                // === FIN LÓGICA DE PATRÓN DE UBICACIÓN ===
+
 
                 if (latestKill) {
                     predictionCount++;
@@ -568,7 +605,7 @@
                     });
                     
                     // Mostrar la hora estimada en la zona horaria del usuario
-                    nextSpawnText = nextSpawnDate.toLocaleTimeString('es-ES', { 
+                    nextSpawnTimeText = nextSpawnDate.toLocaleTimeString('es-ES', { 
                         hour: '2-digit', 
                         minute: '2-digit', 
                         hour12: true,
@@ -580,15 +617,23 @@
 
                 card.innerHTML = `
                     <h3 class="text-lg font-bold ${latestKill ? 'text-mu-accent' : 'text-gray-400'} mb-2 border-b border-gray-600 pb-1">
-                        Ciclo ${slot.display}
+                        Ciclo Programado: ${slot.display}
                     </h3>
-                    <p class="text-sm text-gray-400">Último Kill:</p>
-                    <p class="text-base font-semibold ${latestKill ? 'text-white' : 'text-gray-500'} mb-3">${lastKillText}</p>
                     
-                    <p class="text-sm text-gray-400">Próximo Spawn Estimado (Hora Local):</p>
-                    <p class="text-lg font-extrabold ${latestKill ? 'text-mu-next' : 'text-gray-500'}">
-                        ${nextSpawnText}
+                    <p class="text-sm text-gray-400">Patrón de Spawn Histórico:</p>
+                    <p class="text-xl font-extrabold ${locationHintClass} mb-4 break-words">
+                        ${patternText}
                     </p>
+
+                    <p class="text-sm text-gray-400 border-t border-gray-600 pt-3">Próxima Hora Estimada (Local):</p>
+                    <p class="text-lg font-extrabold ${latestKill ? 'text-mu-next' : 'text-gray-500'} mb-3">
+                        ${nextSpawnTimeText}
+                    </p>
+                    
+                    <p class="text-sm text-gray-400">Último Kill Reportado:</p>
+                    <p class="text-xs font-semibold ${latestKill ? 'text-white' : 'text-gray-500'} mb-2">${lastKillText}</p>
+
+
                     ${isPastDue ? '<p class="text-xs text-mu-error mt-1">Este spawn ya debió ocurrir. ¡Reportar si está vivo!</p>' : ''}
                 `;
                 elements.predictionList.appendChild(card);
