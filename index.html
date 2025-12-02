@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rastreador Colaborativo de Dorados MU</title>
-    <!-- Carga de Tailwind CSS -->
+    <!-- Carga de Tailwind CSS para estilos -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carga de Tone.js para sonido de alarma. ¡Importante! El audio requiere una interacción
+         del usuario (un clic) para activarse en la mayoría de los navegadores. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     <!-- Configuración de color y fuente -->
     <script>
         tailwind.config = {
@@ -55,6 +58,20 @@
 </head>
 <body class="font-sans text-white min-h-screen p-4 sm:p-8">
 
+    <!-- BANNER DE ACTIVACIÓN DE ALARMA (NUEVO) -->
+    <div id="audioActivationBanner" 
+         class="fixed inset-x-0 top-0 z-50 p-3 text-center bg-mu-error/90 text-white shadow-2xl transition duration-500 transform translate-y-0 cursor-pointer border-b-4 border-mu-accent hover:bg-mu-error">
+        <div class="max-w-5xl mx-auto flex justify-between items-center">
+            <span class="text-sm sm:text-lg font-bold">
+                🚨 ALERTA: La alarma de 10 minutos está INACTIVA. 
+            </span>
+            <button id="activateAlarmBtn" class="bg-mu-accent text-mu-bg font-extrabold py-2 px-4 rounded-lg shadow-lg hover:scale-105 transition duration-200 ml-4">
+                CLICK AQUÍ para Activar el Audio
+            </button>
+        </div>
+    </div>
+    <!-- FIN BANNER -->
+
     <div class="w-full max-w-5xl mx-auto">
         <!-- Encabezado -->
         <header class="text-center mb-10">
@@ -96,6 +113,10 @@
                     <p class="text-sm font-semibold text-gray-400">Tiempo Restante</p>
                 </div>
             </div>
+            <!-- Mensaje de estado de la alarma -->
+            <p id="alarmStatus" class="text-xs font-semibold mt-4 text-red-400">
+                La alarma requiere activación manual. ¡Haz clic en el banner superior!
+            </p>
         </div>
 
         <!-- Formulario de Registro -->
@@ -243,9 +264,6 @@
 
         // =====================================================================
         // === CONFIGURACIÓN DE FIREBASE (¡IMPORTANTE PARA GITHUB!) ===
-        // 
-        // 1. CONFIGURACIÓN DE FIREBASE (Tus credenciales reales)
-        // ESTA CONFIGURACIÓN CONECTA LA APP AL PROYECTO 'mu-dorado-tracker-clan'
         const YOUR_FIREBASE_CONFIG = {
              apiKey: "AIzaSyD5nSv0oRs09sFBtZmb3c77TJWM7yq0j4s",
              authDomain: "mu-dorado-tracker-clan.firebaseapp.com",
@@ -255,7 +273,7 @@
              appId: "1:489379914106:web:4660c62e46d1a5aa19b6c3"
         };
         
-        // 2. Lógica para cargar la configuración (Prioriza Canvas, luego usa la tuya)
+        // Lógica para cargar la configuración (Prioriza Canvas, luego usa la tuya)
         let firebaseConfig = YOUR_FIREBASE_CONFIG;
         let authToUse = signInAnonymously;
         
@@ -263,9 +281,7 @@
         const canvasFirebaseConfigJson = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
         
         if (canvasFirebaseConfigJson && canvasFirebaseConfigJson.length > 2) {
-            // Estamos en el entorno de Canvas
             try {
-                // Revertir a la configuración de Canvas si está disponible
                 firebaseConfig = JSON.parse(canvasFirebaseConfigJson);
             } catch (e) {
                 console.error("Error al parsear la configuración de Canvas:", e);
@@ -275,17 +291,87 @@
             }
         }
         
-        // 3. ID de la aplicación para el path de Firestore
+        // ID de la aplicación para el path de Firestore
         const appId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId || 'default-app-id'; 
         
-        // =====================================================================
-        // === FIN DE LA CONFIGURACIÓN DE FIREBASE ===
         // =====================================================================
         
         let db;
         let auth;
         let userId = null;
         let isAuthReady = false;
+        
+        // --- Variables y Lógica de Audio ---
+        let alarmPlayed = false;
+        let toneSynth = null;
+        let isAudioActivated = false; // NUEVO: Bandera de estado del audio
+        const TEN_MINUTES_MS = 10 * 60 * 1000; 
+        
+        /**
+         * Inicializa el contexto de audio y el sintetizador de alarma.
+         * Requiere que Tone.js esté cargado globalmente.
+         */
+        function initializeAudio() {
+            if (typeof Tone === 'undefined') {
+                console.error("Tone.js no está cargado. No se podrá reproducir la alarma.");
+                return;
+            }
+            if (toneSynth) return;
+            try {
+                // Inicializar un sintetizador de ruido simple (White Noise)
+                toneSynth = new Tone.NoiseSynth({
+                    noise: { type: 'white' },
+                    envelope: { attack: 0.005, decay: 0.3, sustain: 0, release: 0.2 }
+                }).toDestination();
+                console.log("Sintetizador de alarma inicializado.");
+            } catch (e) {
+                console.error("Error inicializando Tone.js:", e);
+            }
+        }
+
+        /**
+         * Reproduce el sonido de la alarma.
+         */
+        function playAlarmSound() {
+            if (!isAudioActivated) return; // Solo sonar si está activado
+            
+            try {
+                if (toneSynth) {
+                    // Reproducir un pulso de ruido corto (2 pulsos rápidos)
+                    toneSynth.triggerAttackRelease("16n", Tone.now());
+                    toneSynth.triggerAttackRelease("16n", Tone.now() + 0.3); // Segundo pulso
+                    console.log("¡Alarma de invasión activada! 10 minutos restantes.");
+                }
+            } catch (e) {
+                 console.error("Error al reproducir la alarma. Asegúrate de que el AudioContext esté activo.", e);
+            }
+        }
+        
+        // Función para activar el AudioContext con el clic
+        function activateAudio(event) {
+            if (typeof Tone === 'undefined' || isAudioActivated) return;
+
+            // Intentar iniciar el contexto
+            Tone.start().then(() => {
+                isAudioActivated = true;
+                console.log("Contexto de Audio activado por interacción del usuario.");
+                
+                // Ocultar el banner de activación
+                const banner = document.getElementById('audioActivationBanner');
+                const status = document.getElementById('alarmStatus');
+                banner.classList.add('translate-y-[-100%]');
+                setTimeout(() => banner.style.display = 'none', 500); // Ocultar después de la transición
+                
+                status.classList.remove('text-red-400');
+                status.classList.add('text-mu-next');
+                status.textContent = '✅ Alarma activada. Sonará 10 minutos antes de cada invasión.';
+            }).catch(e => {
+                console.error("Fallo al iniciar el AudioContext:", e);
+            });
+            event.stopPropagation(); // Prevenir que se propague
+        }
+        // --- Fin Lógica de Audio ---
+
 
         // Path de la colección pública (utiliza el appId dinámico)
         const COLLECTION_PATH = `/artifacts/${appId}/public/data/golden_invasion_tracker`;
@@ -323,13 +409,11 @@
             doradoTypeSelect: document.getElementById('doradoType'), // Nuevo
             mapSelect: document.getElementById('map'), // Nuevo
             mapRestrictionNote: document.getElementById('mapRestrictionNote'), // Nuevo
+            alarmStatus: document.getElementById('alarmStatus'), // Nuevo para el estado
+            activateAlarmBtn: document.getElementById('activateAlarmBtn'), // NUEVO Botón de activación
         };
         
         // --- Lógica de Restricciones del Mapa ---
-        /**
-         * Actualiza el selector de mapas para que solo sean seleccionables los permitidos
-         * para el tipo de dorado actual.
-         */
         function updateMapOptions() {
             const selectedDoradoType = elements.doradoTypeSelect.value;
             const allowedMaps = MAP_RESTRICTIONS[selectedDoradoType];
@@ -337,26 +421,20 @@
             let restrictionActive = false;
             let firstAllowedMap = null;
 
-            // Recorrer todas las opciones del selector de mapa
             Array.from(elements.mapSelect.options).forEach(option => {
                 const mapValue = option.value;
                 
-                // Si hay una restricción definida para este tipo de dorado
                 if (allowedMaps) {
                     restrictionActive = true;
                     if (allowedMaps.includes(mapValue)) {
-                        // Permitir la opción
                         option.disabled = false;
                         if (!firstAllowedMap) {
                             firstAllowedMap = mapValue;
                         }
                     } else if (mapValue !== "") {
-                        // Deshabilitar la opción (excepto la opción vacía si existiera, aunque no aplica aquí)
                         option.disabled = true;
                     }
                 } else {
-                    // Si no hay restricciones (ej. por si se agregan tipos futuros), permitir los mapas por defecto
-                    // y deshabilitar los que están marcados como "No Dorado aquí" en el HTML
                     if (option.disabled && option.textContent.includes('No Dorado aquí')) {
                         // Dejar deshabilitado si está marcado explícitamente en el HTML
                     } else {
@@ -365,7 +443,6 @@
                 }
             });
 
-            // Si hay restricción, forzar la selección al primer mapa permitido
             if (restrictionActive && firstAllowedMap) {
                  elements.mapSelect.value = firstAllowedMap;
                  elements.mapRestrictionNote.classList.remove('hidden');
@@ -374,46 +451,28 @@
             }
         }
         
-        // Llamar a la función al cambiar el tipo de dorado
         elements.doradoTypeSelect.addEventListener('change', updateMapOptions);
 
-        // --- Fin Lógica de Restricciones del Mapa ---
-
-
         // --- Lógica de la Hora Preseleccionada ---
-        /**
-         * Determina la hora de invasión VET (UTC-4) que está actualmente activa
-         * o la más reciente, basándose en la hora local del usuario.
-         * @returns {string} El valor de la hora programada VET (Ej: '22:00').
-         */
         function getActiveScheduledTimeVET() {
             const now = new Date();
-            const currentHour = now.getHours(); // 0 (medianoche) a 23 (11 PM)
-
-            // VET INVASION SLOTS: 06:00, 14:00, 22:00 (en hora local del usuario, asumiendo VET)
+            const currentHour = now.getHours(); 
             
-            // 1. Slot de 22:00 VET (Activo de 22:00 a 05:59)
             if (currentHour >= 22 || currentHour < 6) {
                 return '22:00';
             } 
             
-            // 2. Slot de 06:00 VET (Activo de 06:00 a 13:59)
             if (currentHour >= 6 && currentHour < 14) {
                 return '06:00';
             } 
             
-            // 3. Slot de 14:00 VET (Activo de 14:00 a 21:59)
             if (currentHour >= 14 && currentHour < 22) {
                 return '14:00';
             }
             
-            // Fallback (debería ser innecesario)
             return '22:00'; 
         }
 
-        /**
-         * Preselecciona la opción de hora en el selector.
-         */
         function setDynamicScheduledTime() {
             const activeTime = getActiveScheduledTimeVET();
             const options = elements.scheduledTimeSelect.options;
@@ -428,7 +487,7 @@
         // --- Fin Lógica de la Hora Preseleccionada ---
 
 
-        // --- Lógica del Contador de Tiempo ---
+        // --- Lógica del Contador de Tiempo y Alarma ---
         function getNextInvasionTime() {
             const now = Date.now();
             const baseDate = new Date(now);
@@ -438,6 +497,7 @@
             let candidateTimes = [];
             let nextTarget = Infinity;
 
+            // Las horas UTC: 22:00 VET = 2:00 UTC, 06:00 VET = 10:00 UTC, 14:00 VET = 18:00 UTC
             for (const utcHour of FIXED_UTC_HOURS) {
                 let candidate = new Date(baseDate.getTime());
                 candidate.setUTCHours(utcHour, 0, 0, 0);
@@ -472,12 +532,25 @@
         function updateCountdown() {
             const nextInvasionTimeMs = getNextInvasionTime();
             const now = Date.now();
-            const distance = nextInvasionTimeMs - now;
+            let distance = nextInvasionTimeMs - now;
 
             if (distance < 0) {
+                // La invasión ha pasado, reiniciar la bandera para el próximo ciclo
+                alarmPlayed = false; 
                 setTimeout(updateCountdown, 1000);
                 return;
             }
+
+            // --- Lógica de Alarma (10 minutos = 600000 ms) ---
+            // Chequear si estamos en la ventana de [10:00 - 9:50] antes de la invasión (10 segundos de margen)
+            if (distance > (TEN_MINUTES_MS - 10000) && distance <= TEN_MINUTES_MS) {
+                if (!alarmPlayed) {
+                    playAlarmSound();
+                    alarmPlayed = true; 
+                }
+            }
+            
+            // --- Fin Lógica de Alarma ---
 
             const hours = Math.floor(distance / (1000 * 60 * 60));
             const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
@@ -495,7 +568,6 @@
                 timeZoneName: 'short'
             });
             
-            // También se actualiza la preselección de hora cada segundo para asegurar la precisión en el cambio de ciclo.
             setDynamicScheduledTime();
 
             setTimeout(updateCountdown, 1000);
@@ -507,9 +579,7 @@
             element.classList.remove('input-error');
         }
         
-        // Validación de Coordenadas: Requiere dos números separados por coma (X,Y)
         elements.coordsInput.addEventListener('input', (e) => {
-            // Permite solo dígitos y una coma
             e.target.value = e.target.value.replace(/[^0-9,]/g, '');
             removeErrorClass(e.target);
         });
@@ -520,7 +590,6 @@
 
             const playerNameInput = document.getElementById('playerName');
 
-            // 1. Validar Nombre del Personaje (Obligatorio)
             if (!data.playerName || data.playerName.trim() === '') {
                 errorMsg = "❌ El nombre del Personaje es obligatorio.";
                 isValid = false;
@@ -529,8 +598,7 @@
                 removeErrorClass(playerNameInput);
             }
 
-            // 2. Validar Coordenadas (Formato X,Y)
-            const coordsRegex = /^\d+,\s*\d+$/; // Número, coma opcionalmente seguida de espacio, número
+            const coordsRegex = /^\d+,\s*\d+$/; 
             if (!data.coords || !coordsRegex.test(data.coords.trim())) {
                 if (isValid) errorMsg = "❌ Las Coordenadas deben estar en formato 'X,Y' (Ej: 140,50).";
                 isValid = false;
@@ -539,7 +607,6 @@
                 removeErrorClass(elements.coordsInput);
             }
 
-            // 3. Validar Servidor 
             if (!data.server || data.server === "") {
                  if (isValid) errorMsg = "❌ Debes seleccionar uno de los 4 servidores PandaMU.";
                  isValid = false;
@@ -548,7 +615,6 @@
                 removeErrorClass(elements.serverSelect);
             }
             
-            // 4. VALIDACIÓN EXTRA DE RESTRICCIÓN DE MAPA
             const allowedMaps = MAP_RESTRICTIONS[data.type];
             if (allowedMaps && !allowedMaps.includes(data.map)) {
                 if (isValid) errorMsg = `❌ El ${data.type} Dorado solo aparece en ${allowedMaps.join(' o ')}. Por favor, selecciona el mapa correcto.`;
@@ -571,11 +637,10 @@
         // --- Función para generar las horas programadas (VET) ---
         function generateScheduledTimes() {
             const times = [];
-            // Las horas de inicio (24h) en VET/UTC-4: 22:00, 06:00, 14:00
-            const vetHours = [22, 6, 14].sort((a, b) => a - b); // Ordenar para que el selector esté 6, 14, 22
+            const vetHours = [22, 6, 14].sort((a, b) => a - b); 
             
             vetHours.forEach(displayHour => {
-                const ampm = displayHour >= 12 ? 'PM' : 'AM';
+                const ampm = displayHour >= 12 && displayHour !== 24 ? 'PM' : 'AM';
                 const twelveHour = displayHour % 12 === 0 ? 12 : displayHour % 12; 
                 
                 const timeString = `${twelveHour}:00 ${ampm} VET`;
@@ -589,7 +654,7 @@
         // --- Rellenar el selector de horas al inicio ---
         function populateScheduledTimeSelect() {
             const scheduledTimes = generateScheduledTimes();
-            elements.scheduledTimeSelect.innerHTML = ''; // Limpiar opciones
+            elements.scheduledTimeSelect.innerHTML = ''; 
             scheduledTimes.forEach(time => {
                 const option = document.createElement('option');
                 option.value = time.value;
@@ -600,9 +665,10 @@
         
         // --- 1. Inicialización de Firebase y Autenticación ---
         async function initFirebase() {
+            initializeAudio(); // Inicializar el sintetizador de audio
             populateScheduledTimeSelect(); 
-            setDynamicScheduledTime(); // Preseleccionar la hora activa
-            updateMapOptions(); // Aplicar las restricciones de mapa iniciales
+            setDynamicScheduledTime(); 
+            updateMapOptions(); 
             updateCountdown(); // Iniciar el contador
 
             if (!firebaseConfig.apiKey) {
@@ -651,9 +717,9 @@
             const playerNameInput = document.getElementById('playerName');
 
             const data = {
-                type: elements.doradoTypeSelect.value, // Usar la referencia del objeto
+                type: elements.doradoTypeSelect.value, 
                 server: elements.serverSelect.value, 
-                map: elements.mapSelect.value, // Usar la referencia del objeto
+                map: elements.mapSelect.value, 
                 coords: elements.coordsInput.value.trim().replace(/\s/g, ''), 
                 playerName: playerNameInput.value.trim(),
                 
@@ -663,7 +729,6 @@
                 recordedBy: userId,
             };
             
-            // Llama a la validación antes de proceder
             if (!validateFormFields(data)) {
                 return; 
             }
@@ -677,11 +742,10 @@
                 await addDoc(collectionRef, data);
                 showMessage("✅ ¡Registro de Kill guardado con éxito!", 'mu-primary');
                 
-                // Limpiar solo los campos de ubicación/tipo/coords. La hora se preselecciona dinámicamente de nuevo.
                 elements.coordsInput.value = ''; 
-                elements.doradoTypeSelect.value = 'Goblin'; // Volver a Goblin (Noria)
-                updateMapOptions(); // Aplicar la restricción de mapa (forzar a Noria)
-                setDynamicScheduledTime(); // Volver a asegurar la selección dinámica después del envío
+                elements.doradoTypeSelect.value = 'Goblin'; 
+                updateMapOptions(); 
+                setDynamicScheduledTime(); 
 
             } catch (error) {
                 console.error("Error al guardar el registro:", error);
@@ -720,9 +784,6 @@
 
         // --- 4. Lógica de Análisis y Predicción de TOP UBICACIONES POR TIPO ---
 
-        /**
-         * Calcula el Top 3 de ubicaciones para un conjunto de registros.
-         */
         function getTop3Locations(records) {
             const locationCounts = {};
             
@@ -739,9 +800,6 @@
             return sortedLocations;
         }
 
-        /**
-         * Genera el HTML para mostrar el Top 3.
-         */
         function generateTop3Html(top3) {
              if (top3.length === 0) {
                  return '<p class="text-sm text-gray-500 italic">No hay registros para este tipo de Dorado en este ciclo.</p>';
@@ -763,7 +821,6 @@
             const scheduledTimes = generateScheduledTimes(); 
             const latestKills = {};
             
-            // Agrupar registros por hora programada y encontrar el último kill
             const groupedRecords = records.reduce((acc, record) => {
                 const slot = record.scheduledTime;
                 if (!acc[slot]) {
@@ -784,7 +841,6 @@
                 const slotRecords = groupedRecords[slot.value] || [];
                 const latestKill = latestKills[slot.value];
                 
-                // 1. Calcular el tiempo estimado de próximo spawn para el encabezado
                 let nextSpawnTimeText = 'No hay datos de kills.';
                 let isPastDue = false;
                 let lastKillInfo = 'Último Kill: N/A';
@@ -803,7 +859,6 @@
                      lastKillInfo = `Último Kill: ${new Date(latestKill.recordedTimestamp).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} por ${latestKill.playerName || latestKill.recordedBy.substring(0, 4) + '...'}`;
                 }
 
-                // 2. Construir el bloque de acordeón para el ciclo de tiempo
                 const accordionBlock = document.createElement('div');
                 accordionBlock.className = 'bg-gray-800 rounded-lg shadow-xl overflow-hidden border border-gray-700';
                 
@@ -836,7 +891,6 @@
                 `;
                 elements.analysisContainer.appendChild(accordionBlock);
                 
-                // 3. Lógica para el acordeón
                 const header = document.getElementById(headerId);
                 const content = document.getElementById(contentId);
                 const icon = header.querySelector('svg');
@@ -848,11 +902,9 @@
                     icon.classList.toggle('rotate-180', !isExpanded);
                 });
 
-                // 4. Generar el contenido detallado por Tipo de Dorado
                 const detailContainer = document.getElementById(`analysisDetail-${slotIndex}`);
 
                 GOLDEN_TYPES.forEach(type => {
-                    // Filtrar registros solo para este slot y este tipo
                     const typeRecords = slotRecords.filter(r => r.type === type);
                     const top3 = getTop3Locations(typeRecords);
                     const top3Html = generateTop3Html(top3);
@@ -860,7 +912,6 @@
                     
                     const typeCard = document.createElement('div');
                     typeCard.className = `p-4 rounded-lg border-2 border-gray-700 bg-gray-700/50`;
-                    // === FIX APLICADO AQUÍ: Eliminado el corchete '}' del final del título ===
                     typeCard.innerHTML = `
                         <p class="text-base font-extrabold text-${typeColorClass} mb-2">${type} Dorado</p>
                         ${top3Html}
@@ -937,6 +988,10 @@
         
         // Iniciar la aplicación de Firebase
         initFirebase();
+
+        // NUEVO: Escuchar clics en el botón de activación del banner
+        document.getElementById('audioActivationBanner').addEventListener('click', activateAudio);
+        document.getElementById('activateAlarmBtn').addEventListener('click', activateAudio);
     </script>
 </body>
 </html>
