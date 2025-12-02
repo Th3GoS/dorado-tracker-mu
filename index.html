@@ -19,6 +19,7 @@
                         'mu-stat': '#3b82f6',    // Azul para puntos
                         'mu-error': '#ef4444',   // Rojo para error
                         'mu-credit': '#f97316', // Naranja brillante para los créditos
+                        'mu-next': '#10b981',   // Verde esmeralda para el próximo spawn
                     },
                     fontFamily: {
                         sans: ['Inter', 'sans-serif'],
@@ -61,6 +62,27 @@
                 ✅ **CONFIGURACIÓN LISTA:** Conectando a Firebase...
             </p>
         </header>
+
+        <!-- Nuevo: Contador de Invasión Global -->
+        <div id="countdownSection" class="bg-gray-800 p-6 sm:p-8 rounded-xl shadow-2xl mb-10 text-center border-2 border-mu-next">
+            <h2 class="text-xl font-bold text-mu-next mb-4 flex justify-center items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                PRÓXIMA INVASIÓN DORADA (UTC-4)
+            </h2>
+            <div class="flex flex-col sm:flex-row justify-center items-center space-y-4 sm:space-y-0 sm:space-x-8">
+                <div class="text-gray-400">
+                    <p class="text-2xl font-extrabold text-mu-accent" id="localTimeDisplay">--:--</p>
+                    <p class="text-xs">Hora Local Estimada</p>
+                </div>
+                <div class="border-t sm:border-t-0 sm:border-l border-gray-600 h-10 w-2 sm:w-0"></div>
+                <div>
+                    <p class="text-4xl sm:text-5xl font-extrabold text-white" id="countdownDisplay">--:--:--</p>
+                    <p class="text-sm font-semibold text-gray-400">Tiempo Restante</p>
+                </div>
+            </div>
+        </div>
 
         <!-- Formulario de Registro -->
         <div class="bg-mu-dark p-6 sm:p-8 rounded-xl shadow-2xl mb-10">
@@ -105,7 +127,7 @@
                     </select>
                 </div>
 
-                <!-- Coordenadas (ACTUALIZADO: Placeholder y Validación JS) -->
+                <!-- Coordenadas (Validación de solo números y comas) -->
                 <div>
                     <label for="coords" class="block text-sm font-medium text-gray-300 mb-1">Coordenadas (Solo Números y Coma)</label>
                     <input type="text" id="coords" placeholder="Ej: 140,50" required
@@ -138,6 +160,22 @@
                 </div>
             </form>
             <p id="formMessage" class="mt-4 text-center text-sm hidden"></p>
+        </div>
+
+        <!-- Sección de Análisis y Predicciones -->
+        <div class="bg-mu-dark p-6 sm:p-8 rounded-xl shadow-2xl mb-10">
+            <h2 class="text-2xl font-semibold text-mu-next mb-5 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Análisis de Patrones y Próximos Spawns Estimados
+            </h2>
+            <div id="predictionList" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Las predicciones se insertarán aquí -->
+                <p id="noPredictions" class="md:col-span-3 text-center text-gray-500">
+                    Ingresa al menos 3 registros (uno por ciclo) para comenzar el análisis.
+                </p>
+            </div>
         </div>
 
         <!-- Tabla de Registros -->
@@ -193,7 +231,7 @@
         let firebaseConfig = YOUR_FIREBASE_CONFIG;
         let authToUse = signInAnonymously;
         
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_token : null;
         const canvasFirebaseConfigJson = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
         
         if (canvasFirebaseConfigJson && canvasFirebaseConfigJson.length > 2) {
@@ -222,8 +260,16 @@
         let isAuthReady = false;
 
         // Path de la colección pública (utiliza el appId dinámico)
-        // Importante: La estructura es /artifacts/mu-dorado-tracker-clan/public/data/golden_invasion_tracker
         const COLLECTION_PATH = `/artifacts/${appId}/public/data/golden_invasion_tracker`;
+
+        // Constantes para la predicción (8 horas en milisegundos)
+        const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000; 
+
+        // Las horas de spawn fijas en UTC (VET = UTC-4)
+        // 22:00 VET -> 02:00 UTC (al día siguiente)
+        // 06:00 VET -> 10:00 UTC
+        // 14:00 VET -> 18:00 UTC
+        const FIXED_UTC_HOURS = [2, 10, 18]; 
 
         const elements = {
             userIdDisplay: document.getElementById('userIdDisplay'),
@@ -233,39 +279,125 @@
             recordsTableBody: document.getElementById('recordsTableBody'),
             loading: document.getElementById('loading'),
             noRecords: document.getElementById('noRecords'),
-            scheduledTimeSelect: document.getElementById('scheduledTime'), // Selector de hora
-            coordsInput: document.getElementById('coords'), // Input de coordenadas
+            scheduledTimeSelect: document.getElementById('scheduledTime'), 
+            coordsInput: document.getElementById('coords'), 
+            predictionList: document.getElementById('predictionList'), 
+            noPredictions: document.getElementById('noPredictions'),
+            // Nuevos elementos para el contador
+            countdownDisplay: document.getElementById('countdownDisplay'),
+            localTimeDisplay: document.getElementById('localTimeDisplay'),
         };
+
+        // --- Lógica del Contador de Tiempo ---
+        function getNextInvasionTime() {
+            const now = Date.now();
+            const baseDate = new Date(now);
+            
+            // Establecer baseDate al comienzo del día UTC actual
+            baseDate.setUTCFullYear(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), baseDate.getUTCDate());
+            
+            let candidateTimes = [];
+            let nextTarget = Infinity;
+
+            // 1. Calcular las 3 horas de spawn para hoy (o ayer si UTC es 2)
+            for (const utcHour of FIXED_UTC_HOURS) {
+                let candidate = new Date(baseDate.getTime());
+                candidate.setUTCHours(utcHour, 0, 0, 0);
+                candidateTimes.push(candidate.getTime());
+            }
+
+            // 2. Encontrar el soonest future time
+            let foundFuture = false;
+            for (let time of candidateTimes) {
+                if (time > now && time < nextTarget) {
+                    nextTarget = time;
+                    foundFuture = true;
+                }
+            }
+
+            // 3. Si no se encontró un futuro (significa que todos los spawns de hoy pasaron),
+            //    el próximo debe ser mañana. El spawn de las 02:00 UTC del siguiente día será el primero.
+            if (!foundFuture) {
+                const tomorrowBaseDate = new Date(baseDate.getTime());
+                tomorrowBaseDate.setUTCDate(tomorrowBaseDate.getUTCDate() + 1);
+                
+                // Recalcular candidatos para mañana
+                let tomorrowCandidates = [];
+                for (const utcHour of FIXED_UTC_HOURS) {
+                    let candidate = new Date(tomorrowBaseDate.getTime());
+                    candidate.setUTCHours(utcHour, 0, 0, 0);
+                    tomorrowCandidates.push(candidate.getTime());
+                }
+                
+                nextTarget = Math.min(...tomorrowCandidates);
+            }
+            
+            return nextTarget; // Retorna un timestamp UTC de la próxima invasión.
+        }
+
+        function updateCountdown() {
+            const nextInvasionTimeMs = getNextInvasionTime();
+            const now = Date.now();
+            const distance = nextInvasionTimeMs - now;
+
+            if (distance < 0) {
+                // Si el contador es negativo (ya pasó, pero la lógica debería evitar esto), 
+                // recalcular el siguiente
+                setTimeout(updateCountdown, 1000);
+                return;
+            }
+
+            // Cálculo del tiempo restante
+            const hours = Math.floor(distance / (1000 * 60 * 60));
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+            const format = (num) => String(num).padStart(2, '0');
+
+            elements.countdownDisplay.textContent = `${format(hours)}:${format(minutes)}:${format(seconds)}`;
+
+            // Mostrar la hora local de la próxima invasión
+            const localDate = new Date(nextInvasionTimeMs);
+            elements.localTimeDisplay.textContent = localDate.toLocaleTimeString('es-ES', { 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                hour12: true,
+                timeZoneName: 'short'
+            });
+            
+            // Siguiente actualización en 1 segundo
+            setTimeout(updateCountdown, 1000);
+        }
+
+        // Iniciar el contador al cargar
+        updateCountdown();
+
+        // --- Fin Lógica del Contador de Tiempo ---
+
 
         // --- 0. Setup Real-Time Input Validation for Coordinates ---
         elements.coordsInput.addEventListener('input', (e) => {
             // Solo permite dígitos (0-9) y comas (,)
-            // Elimina cualquier otro carácter (espacios, letras, símbolos, etc.)
             e.target.value = e.target.value.replace(/[^0-9,]/g, '');
         });
 
         // --- Función para generar las horas programadas (10pm y luego cada 8 horas, en formato VET/UTC-4) ---
         function generateScheduledTimes() {
             const times = [];
-            // Inicializar a las 22:00 (10 PM)
+            // Las horas de inicio (24h) en VET/UTC-4: 22:00, 06:00, 14:00
             let hour = 22; 
-
-            for (let i = 0; i < 3; i++) { // Generar 3 ciclos (24 horas / 8 horas por ciclo = 3)
-                // Asegurar que la hora está entre 0 y 23
+            
+            for (let i = 0; i < 3; i++) { 
                 const displayHour = hour % 24; 
-
-                // Formatear a formato 12 horas (ej: 22 -> 10 PM, 6 -> 6 AM, 14 -> 2 PM)
                 const ampm = displayHour >= 12 ? 'PM' : 'AM';
-                // Convertir 0 (medianoche) o 12 (mediodía) a 12 para la visualización de 12h
                 const twelveHour = displayHour % 12 === 0 ? 12 : displayHour % 12; 
                 
-                // Mostrar explícitamente VET
                 const timeString = `${twelveHour}:00 ${ampm} VET`;
-                const valueString = `${displayHour.toString().padStart(2, '0')}:00`; // Valor interno (24h)
+                const valueString = `${displayHour.toString().padStart(2, '0')}:00`; 
 
                 times.push({ value: valueString, display: timeString });
 
-                // Incrementar 8 horas
+                // Incrementar 8 horas (8h cycle)
                 hour += 8;
             }
             return times;
@@ -284,9 +416,8 @@
         
         // --- 1. Inicialización de Firebase y Autenticación ---
         async function initFirebase() {
-            populateScheduledTimeSelect(); // Llenar el selector de horas
+            populateScheduledTimeSelect(); 
             
-            // VERIFICACIÓN CRÍTICA: La clave API debe existir para que la inicialización funcione
             if (!firebaseConfig.apiKey) {
                 console.error("Error: apiKey de Firebase no encontrada. La aplicación no puede inicializarse.");
                 elements.userIdDisplay.textContent = 'ID de Sesión: ERROR DE CONFIGURACIÓN';
@@ -299,10 +430,8 @@
                 db = getFirestore(app);
                 auth = getAuth(app); 
 
-                // 1. Intentar autenticación con el método definido (Custom Token o Anónimo)
                 await authToUse(auth);
 
-                // 2. Escuchar cambios de estado de autenticación (el resultado final)
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
@@ -319,7 +448,6 @@
             } catch (error) {
                 console.error("Error grave durante la inicialización o autenticación:", error);
                 elements.userIdDisplay.textContent = 'ID de Sesión: ERROR FATAL DE AUTENTICACIÓN';
-                // Mensaje más específico sobre la configuración de Auth.
                 showMessage(`❌ Error de Firebase: ${error.message}. CAUSA PROBABLE: El proveedor 'Anónimo' de Firebase Authentication NO está habilitado en tu proyecto.`, 'mu-error');
             }
         }
@@ -328,7 +456,6 @@
         elements.trackerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            // Mensaje de bloqueo en el botón de envío
             if (!isAuthReady || !userId) {
                 showMessage("Por favor, espera a que la autenticación se complete antes de enviar.", 'mu-error');
                 return;
@@ -338,13 +465,11 @@
                 type: document.getElementById('doradoType').value,
                 server: document.getElementById('server').value.trim(),
                 map: document.getElementById('map').value,
-                coords: elements.coordsInput.value.trim(), // Ya validado en el input event
+                coords: elements.coordsInput.value.trim(), 
                 playerName: document.getElementById('playerName').value.trim(),
                 
-                // GUARDAR LA HORA PROGRAMADA SELECCIONADA
                 scheduledTime: elements.scheduledTimeSelect.value, 
                 
-                // Mantenemos timestamp para saber cuándo se registró este reporte
                 recordedTimestamp: Date.now(), 
                 recordedBy: userId,
             };
@@ -358,14 +483,12 @@
                 await addDoc(collectionRef, data);
                 showMessage("✅ ¡Registro de Kill guardado con éxito!", 'mu-primary');
                 
-                // Limpiar campos para el siguiente registro
                 document.getElementById('server').value = '';
                 document.getElementById('coords').value = ''; 
                 document.getElementById('doradoType').value = 'Goblin';
                 document.getElementById('map').value = 'Lorencia';
             } catch (error) {
                 console.error("Error al guardar el registro:", error);
-                // El error 7 PERMISSION_DENIED generalmente significa que las reglas de seguridad no permiten la escritura.
                 showMessage(`❌ Error al guardar: ${error.message}. ¡Importante! Asegúrate de que tus Reglas de Seguridad de Firestore permitan a usuarios autenticados escribir en: \`${COLLECTION_PATH}\``, 'mu-error');
             } finally {
                 elements.submitBtn.disabled = false;
@@ -377,7 +500,6 @@
         function setupRealtimeListener() {
             if (!isAuthReady || !userId) return;
 
-            // La consulta sigue siendo la misma
             const q = query(collection(db, COLLECTION_PATH));
             
             elements.loading.classList.remove('hidden');
@@ -393,6 +515,7 @@
                 records.sort((a, b) => b.recordedTimestamp - a.recordedTimestamp); 
                 
                 renderTable(records);
+                analyzeAndDisplayPredictions(records); 
                 elements.loading.classList.add('hidden');
             }, (error) => {
                 console.error("Error al escuchar los registros en tiempo real:", error);
@@ -400,7 +523,85 @@
             });
         }
 
-        // --- 4. Renderizado de la Tabla ---
+        // --- 4. Lógica de Análisis y Predicción ---
+        function analyzeAndDisplayPredictions(records) {
+            const scheduledTimes = generateScheduledTimes(); 
+            const latestKills = {};
+
+            // 1. Encontrar el último kill para cada ciclo programado
+            records.forEach(record => {
+                const timeSlot = record.scheduledTime;
+                if (record.recordedTimestamp > (latestKills[timeSlot]?.recordedTimestamp || 0)) {
+                    latestKills[timeSlot] = record;
+                }
+            });
+
+            elements.predictionList.innerHTML = ''; 
+            let predictionCount = 0;
+
+            scheduledTimes.forEach(slot => {
+                const latestKill = latestKills[slot.value];
+                const card = document.createElement('div');
+                card.className = 'bg-gray-700 p-4 rounded-lg shadow-lg';
+                
+                let lastKillText = 'N/A';
+                let nextSpawnText = 'No hay registros';
+                let isPastDue = false;
+
+                if (latestKill) {
+                    predictionCount++;
+                    const latestDate = new Date(latestKill.recordedTimestamp);
+                    
+                    // 2. Calcular el próximo spawn teórico (8 horas después del último kill)
+                    let nextSpawnTimestamp = latestKill.recordedTimestamp + EIGHT_HOURS_MS;
+                    
+                    // 3. Ajustar si el tiempo predicho ya pasó (avanzar al siguiente ciclo de 8h)
+                    while (nextSpawnTimestamp < Date.now()) {
+                        nextSpawnTimestamp += EIGHT_HOURS_MS;
+                        isPastDue = true;
+                    }
+
+                    const nextSpawnDate = new Date(nextSpawnTimestamp);
+
+                    lastKillText = latestDate.toLocaleString('es-ES', { 
+                        day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
+                    });
+                    
+                    // Mostrar la hora estimada en la zona horaria del usuario
+                    nextSpawnText = nextSpawnDate.toLocaleTimeString('es-ES', { 
+                        hour: '2-digit', 
+                        minute: '2-digit', 
+                        hour12: true,
+                        timeZoneName: 'short'
+                    });
+                    
+                    lastKillText += ` por ${latestKill.playerName || latestKill.recordedBy.substring(0, 4) + '...'}`;
+                }
+
+                card.innerHTML = `
+                    <h3 class="text-lg font-bold ${latestKill ? 'text-mu-accent' : 'text-gray-400'} mb-2 border-b border-gray-600 pb-1">
+                        Ciclo ${slot.display}
+                    </h3>
+                    <p class="text-sm text-gray-400">Último Kill:</p>
+                    <p class="text-base font-semibold ${latestKill ? 'text-white' : 'text-gray-500'} mb-3">${lastKillText}</p>
+                    
+                    <p class="text-sm text-gray-400">Próximo Spawn Estimado (Hora Local):</p>
+                    <p class="text-lg font-extrabold ${latestKill ? 'text-mu-next' : 'text-gray-500'}">
+                        ${nextSpawnText}
+                    </p>
+                    ${isPastDue ? '<p class="text-xs text-mu-error mt-1">Este spawn ya debió ocurrir. ¡Reportar si está vivo!</p>' : ''}
+                `;
+                elements.predictionList.appendChild(card);
+            });
+            
+            if (predictionCount === 0) {
+                elements.noPredictions.classList.remove('hidden');
+            } else {
+                elements.noPredictions.classList.add('hidden');
+            }
+        }
+
+        // --- 5. Renderizado de la Tabla (Se mantiene) ---
         function renderTable(records) {
             elements.recordsTableBody.innerHTML = '';
             
@@ -411,7 +612,6 @@
 
             elements.noRecords.classList.add('hidden');
 
-            // Mapeamos el valor interno ("22:00") a la string de visualización ("10:00 PM VET")
             const timeMap = generateScheduledTimes().reduce((acc, time) => {
                 acc[time.value] = time.display;
                 return acc;
@@ -419,14 +619,12 @@
 
 
             records.forEach(record => {
-                // Formatear el timestamp de registro (recordedTimestamp)
                 const date = new Date(record.recordedTimestamp);
                 const timeString = date.toLocaleString('es-ES', { 
                     day: '2-digit', month: '2-digit', year: '2-digit', 
                     hour: '2-digit', minute: '2-digit' 
                 });
                 
-                // Obtener la hora programada de visualización
                 const displayScheduledTime = timeMap[record.scheduledTime] || record.scheduledTime || 'N/A';
 
 
@@ -446,7 +644,7 @@
             });
         }
 
-        // --- 5. Utilidad de Mensajes ---
+        // --- 6. Utilidad de Mensajes ---
         function showMessage(msg, colorClass) {
             elements.formMessage.textContent = msg;
             elements.formMessage.className = `mt-4 text-center text-sm block`;
