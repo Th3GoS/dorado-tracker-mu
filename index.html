@@ -325,7 +325,7 @@
             mapRestrictionNote: document.getElementById('mapRestrictionNote'), // Nuevo
         };
         
-        // --- Lógica de Restricciones del Mapa (¡NUEVO!) ---
+        // --- Lógica de Restricciones del Mapa ---
         /**
          * Actualiza el selector de mapas para que solo sean seleccionables los permitidos
          * para el tipo de dorado actual.
@@ -380,7 +380,7 @@
         // --- Fin Lógica de Restricciones del Mapa ---
 
 
-        // --- Lógica de la Hora Preseleccionada (Se mantiene) ---
+        // --- Lógica de la Hora Preseleccionada ---
         /**
          * Determina la hora de invasión VET (UTC-4) que está actualmente activa
          * o la más reciente, basándose en la hora local del usuario.
@@ -428,7 +428,7 @@
         // --- Fin Lógica de la Hora Preseleccionada ---
 
 
-        // --- Lógica del Contador de Tiempo (Se mantiene) ---
+        // --- Lógica del Contador de Tiempo ---
         function getNextInvasionTime() {
             const now = Date.now();
             const baseDate = new Date(now);
@@ -501,7 +501,7 @@
             setTimeout(updateCountdown, 1000);
         }
         
-        // --- Lógica de Validación de Inputs (Se mantiene) ---
+        // --- Lógica de Validación de Inputs ---
 
         function removeErrorClass(element) {
             element.classList.remove('input-error');
@@ -568,7 +568,7 @@
         // --- Fin Lógica de Validación de Inputs ---
 
 
-        // --- Función para generar las horas programadas (VET) (Se mantiene) ---
+        // --- Función para generar las horas programadas (VET) ---
         function generateScheduledTimes() {
             const times = [];
             // Las horas de inicio (24h) en VET/UTC-4: 22:00, 06:00, 14:00
@@ -586,7 +586,7 @@
             return times;
         }
 
-        // --- Rellenar el selector de horas al inicio (Se mantiene) ---
+        // --- Rellenar el selector de horas al inicio ---
         function populateScheduledTimeSelect() {
             const scheduledTimes = generateScheduledTimes();
             elements.scheduledTimeSelect.innerHTML = ''; // Limpiar opciones
@@ -639,7 +639,7 @@
             }
         }
 
-        // --- 2. Función de Guardado de Registro (Se mantiene) ---
+        // --- 2. Función de Guardado de Registro ---
         elements.trackerForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
@@ -692,7 +692,7 @@
             }
         });
 
-        // --- 3. Listener en Tiempo Real y Actualización de Tabla (Se mantiene) ---
+        // --- 3. Listener en Tiempo Real y Actualización de Tabla ---
         function setupRealtimeListener() {
             if (!isAuthReady || !userId) return;
 
@@ -718,7 +718,7 @@
             });
         }
 
-        // --- 4. Lógica de Análisis y Predicción de TOP UBICACIONES POR TIPO (Se mantiene) ---
+        // --- 4. Lógica de Análisis y Predicción de TOP UBICACIONES POR TIPO ---
 
         /**
          * Calcula el Top 3 de ubicaciones para un conjunto de registros.
@@ -860,8 +860,9 @@
                     
                     const typeCard = document.createElement('div');
                     typeCard.className = `p-4 rounded-lg border-2 border-gray-700 bg-gray-700/50`;
+                    // === FIX APLICADO AQUÍ: Eliminado el corchete '}' del final del título ===
                     typeCard.innerHTML = `
-                        <p class="text-base font-extrabold text-${typeColorClass} mb-2">${type} Dorado}</p>
+                        <p class="text-base font-extrabold text-${typeColorClass} mb-2">${type} Dorado</p>
                         ${top3Html}
                     `;
                     detailContainer.appendChild(typeCard);
@@ -875,7 +876,7 @@
             }
         }
 
-        // --- 5. Renderizado de la Tabla (Se mantiene) ---
+        // --- 5. Renderizado de la Tabla ---
         function renderTable(records) {
             elements.recordsTableBody.innerHTML = '';
             
@@ -919,7 +920,7 @@
             });
         }
 
-        // --- 6. Utilidad de Mensajes (Se mantiene) ---
+        // --- 6. Utilidad de Mensajes ---
         function showMessage(msg, colorClass) {
             elements.formMessage.textContent = msg;
             elements.formMessage.className = `mt-4 text-center text-sm block`;
