@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rastreador Colaborativo de Dorados MU Panda</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configuración de color y fuente (Mismos colores que la calculadora anterior) -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'mu-bg': '#111827',     // Fondo principal (Gris muy oscuro)
+                        'mu-dark': '#1a202c',   // Fondo de tarjetas (Azul/Gris oscuro)
+                        'mu-primary': '#4f46e5', // Púrpura/Azul vibrante (Botones/Éxito)
+                        'mu-accent': '#fcd34d',  // Dorado/Amarillo (Encabezados)
+                        'mu-stat': '#3b82f6',    // Azul para puntos
+                        'mu-error': '#ef4444',   // Rojo para error
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #111827; 
+        }
+        /* Estilo para tablas responsive */
+        .table-container {
+            overflow-x: auto;
+            max-width: 100%;
+        }
+    </style>
+</head>
+<body class="font-sans text-white min-h-screen p-4 sm:p-8">
+
+    <div class="w-full max-w-5xl mx-auto">
+        <!-- Encabezado -->
+        <header class="text-center mb-10">
+            <h1 class="text-4xl sm:text-5xl font-extrabold text-mu-accent mb-2">
+                Rastreador de Dorados 🐲
+            </h1>
+            <p class="text-gray-400 text-lg">
+                Registro Colaborativo de Invasiones para el Clan
+            </p>
+            <p id="userIdDisplay" class="text-xs text-gray-500 mt-2">
+                ID de Sesión: Cargando...
+            </p>
+            <p class="text-xs text-red-400 mt-1">
+                ⚠️ **RECUERDA:** Para usar esto en tu propio Hosting/GitHub Pages, debes reemplazar 'TU_FIREBASE_CONFIG' en el script.
+            </p>
+        </header>
+
+        <!-- Formulario de Registro -->
+        <div class="bg-mu-dark p-6 sm:p-8 rounded-xl shadow-2xl mb-10">
+            <h2 class="text-2xl font-semibold text-mu-primary mb-5">Registrar Dorado Eliminado</h2>
+            
+            <form id="trackerForm" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                
+                <!-- Tipo de Dorado -->
+                <div>
+                    <label for="doradoType" class="block text-sm font-medium text-gray-300 mb-1">Tipo de Dorado</label>
+                    <select id="doradoType" required
+                        class="w-full p-3 rounded-lg border border-gray-600 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-mu-accent">
+                        <option value="Goblin">Goblin Dorado</option>
+                        <option value="Soldier">Soldier Dorado</option>
+                        <option value="Titan">Titan Dorado</option>
+                        <option value="Budge Dragon">Budge Dragon Dorado</option>
+                    </select>
+                </div>
+                
+                <!-- Servidor/Channel -->
+                <div>
+                    <label for="server" class="block text-sm font-medium text-gray-300 mb-1">Servidor/Canal (Ej: 1-1)</label>
+                    <input type="text" id="server" placeholder="Ej: 1-1 o Free 2" required
+                        class="w-full p-3 rounded-lg border border-gray-600 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-mu-accent">
+                </div>
+                
+                <!-- Mapa -->
+                <div>
+                    <label for="map" class="block text-sm font-medium text-gray-300 mb-1">Mapa</label>
+                    <select id="map" required
+                        class="w-full p-3 rounded-lg border border-gray-600 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-mu-accent">
+                        <option value="Lorencia">Lorencia</option>
+                        <option value="Noria">Noria</option>
+                        <option value="Devias">Devias</option>
+                        <option value="Dungeon">Dungeon</option>
+                        <option value="Lost Tower">Lost Tower</option>
+                        <option value="Tarkan">Tarkan</option>
+                        <option value="Atlans">Atlans</option>
+                        <option value="Aida">Aida</option>
+                        <option value="Kalima">Kalima</option>
+                        <option value="Otros">Otros</option>
+                    </select>
+                </div>
+
+                <!-- Coordenadas -->
+                <div>
+                    <label for="coords" class="block text-sm font-medium text-gray-300 mb-1">Coordenadas (Ej: 120/150)</label>
+                    <input type="text" id="coords" placeholder="Ej: 120/150 o 120,150" required
+                        class="w-full p-3 rounded-lg border border-gray-600 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-mu-accent">
+                </div>
+                
+                <!-- Nombre del Personaje -->
+                <div>
+                    <label for="playerName" class="block text-sm font-medium text-gray-300 mb-1">Nombre del Personaje</label>
+                    <input type="text" id="playerName" placeholder="Tu nombre de personaje" required
+                        class="w-full p-3 rounded-lg border border-gray-600 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-mu-accent">
+                </div>
+
+
+                <!-- Botón de Registro (Ocupa un espacio para alinearse en la cuadrícula) -->
+                <div class="flex items-end">
+                    <button type="submit" id="submitBtn"
+                        class="w-full px-4 py-3 bg-mu-primary text-white font-bold rounded-lg hover:bg-indigo-700 transition duration-300 shadow-lg transform hover:scale-[1.01]">
+                        Registrar Kill
+                    </button>
+                </div>
+            </form>
+            <p id="formMessage" class="mt-4 text-center text-sm hidden"></p>
+        </div>
+
+        <!-- Tabla de Registros -->
+        <div class="bg-mu-dark p-6 sm:p-8 rounded-xl shadow-2xl">
+            <h2 class="text-2xl font-semibold text-mu-accent mb-5">Historial de Invasiones</h2>
+            <div id="loading" class="text-center text-gray-400">Cargando registros...</div>
+            
+            <div class="table-container">
+                <table class="min-w-full divide-y divide-gray-700">
+                    <thead class="bg-gray-700">
+                        <tr>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Tipo</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Servidor</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Mapa</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Coordenadas</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Hora del Kill</th>
+                            <th class="px-3 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Personaje</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recordsTableBody" class="divide-y divide-gray-800">
+                        <!-- Los registros se insertarán aquí -->
+                    </tbody>
+                </table>
+            </div>
+            <p id="noRecords" class="mt-4 text-center text-gray-500 hidden">Aún no hay registros. ¡Sé el primero en reportar!</p>
+        </div>
+    </div>
+
+    <!-- Script de Firebase y Lógica de la Aplicación -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // =====================================================================
+        // === IMPORTANTE: CONFIGURACIÓN DE FIREBASE PARA GITHUB PAGES/HOSTING ===
+        // =====================================================================
+        // Reemplaza esta configuración con la de tu propio proyecto de Firebase.
+        // Si no la tienes, esta aplicación NO funcionará fuera del entorno de Canvas.
+        const firebaseConfig = {
+            apiKey: "TU_FIREBASE_API_KEY", 
+            authDomain: "TU_FIREBASE_PROJECT_ID.firebaseapp.com",
+            projectId: "TU_FIREBASE_PROJECT_ID",
+            storageBucket: "TU_FIREBASE_PROJECT_ID.appspot.com",
+            messagingSenderId: "TU_FIREBASE_MESSAGING_SENDER_ID",
+            appId: "TU_FIREBASE_APP_ID"
+        };
+        
+        // El ID de la aplicación para el path de la colección (puedes usar el projectId si quieres)
+        const appId = firebaseConfig.projectId || 'mu-tracker-prod'; 
+        
+        let db;
+        let auth;
+        let userId = null;
+        let isAuthReady = false;
+
+        // Path de la colección pública. Asegúrate de que las reglas de Firebase permitan
+        // la lectura/escritura pública (o solo para usuarios autenticados).
+        const COLLECTION_PATH = `/artifacts/${appId}/public/data/golden_invasion_tracker`;
+
+        const elements = {
+            userIdDisplay: document.getElementById('userIdDisplay'),
+            trackerForm: document.getElementById('trackerForm'),
+            submitBtn: document.getElementById('submitBtn'),
+            formMessage: document.getElementById('formMessage'),
+            recordsTableBody: document.getElementById('recordsTableBody'),
+            loading: document.getElementById('loading'),
+            noRecords: document.getElementById('noRecords'),
+        };
+        
+        // --- 1. Inicialización de Firebase y Autenticación ---
+        function initFirebase() {
+            // Verificación mínima de configuración
+            if (firebaseConfig.apiKey === "TU_FIREBASE_API_KEY") {
+                console.error("ADVERTENCIA: La configuración de Firebase no ha sido reemplazada. Usando modo de simulación de Canvas.");
+                
+                // Mantiene el comportamiento anterior para que funcione dentro de Canvas
+                const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-mu-app-id';
+                const canvasFirebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+                try {
+                    const app = initializeApp(canvasFirebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
+                    
+                    onAuthStateChanged(auth, async (user) => {
+                         if (user) {
+                            userId = user.uid;
+                            elements.userIdDisplay.textContent = `ID de Sesión: ${userId}`;
+                            isAuthReady = true;
+                            setupRealtimeListener(canvasAppId);
+                        } else {
+                            try {
+                                if (initialAuthToken) {
+                                    await signInWithCustomToken(auth, initialAuthToken);
+                                } else {
+                                    await signInAnonymously(auth);
+                                }
+                            } catch (error) {
+                                console.error("Error en la autenticación:", error);
+                                elements.userIdDisplay.textContent = 'ID de Sesión: Error de autenticación';
+                                isAuthReady = true; 
+                            }
+                        }
+                    });
+
+                } catch (e) {
+                    console.error("Error al inicializar Firebase en Canvas.", e);
+                    elements.userIdDisplay.textContent = 'ID de Sesión: ERROR DE CONFIGURACIÓN';
+                }
+                return; // Detener si estamos en modo Canvas
+            }
+
+            // --- Modo de Producción (Fuera de Canvas) ---
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                // Intentar iniciar sesión anónimamente para la persistencia
+                signInAnonymously(auth).then((userCredential) => {
+                    const user = userCredential.user;
+                    userId = user.uid;
+                    elements.userIdDisplay.textContent = `ID de Sesión: ${userId}`;
+                    isAuthReady = true;
+                    setupRealtimeListener(appId);
+                }).catch((error) => {
+                    console.error("Error al iniciar sesión anónimamente:", error);
+                    elements.userIdDisplay.textContent = 'ID de Sesión: Error de conexión a Firebase';
+                    isAuthReady = true; 
+                });
+
+            } catch (e) {
+                console.error("Error al inicializar Firebase en Producción.", e);
+                elements.userIdDisplay.textContent = 'ID de Sesión: ERROR DE CONFIGURACIÓN';
+            }
+        }
+
+        // --- 2. Función de Guardado de Registro ---
+        elements.trackerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (!isAuthReady || !userId) {
+                showMessage("Por favor, espera a que la autenticación se complete.", 'mu-error');
+                return;
+            }
+
+            const data = {
+                type: document.getElementById('doradoType').value,
+                server: document.getElementById('server').value.trim(),
+                map: document.getElementById('map').value,
+                coords: document.getElementById('coords').value.trim(),
+                playerName: document.getElementById('playerName').value.trim(),
+                timestamp: Date.now(),
+                recordedBy: userId,
+            };
+
+            elements.submitBtn.disabled = true;
+            elements.submitBtn.textContent = 'Guardando...';
+            showMessage('', '');
+
+            try {
+                // Determina la ruta correcta basada en el modo (Canvas vs Producción)
+                const currentAppId = (firebaseConfig.apiKey === "TU_FIREBASE_API_KEY") ? (typeof __app_id !== 'undefined' ? __app_id : 'default-mu-app-id') : appId;
+                const path = `/artifacts/${currentAppId}/public/data/golden_invasion_tracker`;
+
+                const collectionRef = collection(db, path);
+                await addDoc(collectionRef, data);
+                showMessage("✅ ¡Registro de Kill guardado con éxito!", 'mu-primary');
+                
+                // Limpiar campos para el siguiente registro
+                document.getElementById('server').value = '';
+                document.getElementById('coords').value = ''; 
+                document.getElementById('doradoType').value = 'Goblin';
+                document.getElementById('map').value = 'Lorencia';
+                // Dejamos el playerName para registros consecutivos del mismo usuario
+            } catch (error) {
+                console.error("Error al guardar el registro:", error);
+                showMessage(`❌ Error al guardar: ${error.message}. Verifica tu configuración y Reglas de Seguridad de Firebase.`, 'mu-error');
+            } finally {
+                elements.submitBtn.disabled = false;
+                elements.submitBtn.textContent = 'Registrar Kill';
+            }
+        });
+
+        // --- 3. Listener en Tiempo Real y Actualización de Tabla ---
+        function setupRealtimeListener(currentAppId) {
+            if (!isAuthReady) return;
+
+            const path = `/artifacts/${currentAppId}/public/data/golden_invasion_tracker`;
+            const q = query(collection(db, path));
+            
+            elements.loading.classList.remove('hidden');
+
+            onSnapshot(q, (snapshot) => {
+                const records = [];
+                snapshot.forEach((doc) => {
+                    records.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Ordenar los registros por timestamp (más reciente primero)
+                records.sort((a, b) => b.timestamp - a.timestamp); 
+                
+                renderTable(records);
+                elements.loading.classList.add('hidden');
+            }, (error) => {
+                console.error("Error al escuchar los registros en tiempo real:", error);
+                elements.loading.textContent = 'Error al cargar los datos. Revisa la consola para más detalles.';
+            });
+        }
+
+        // --- 4. Renderizado de la Tabla ---
+        function renderTable(records) {
+            elements.recordsTableBody.innerHTML = '';
+            
+            if (records.length === 0) {
+                elements.noRecords.classList.remove('hidden');
+                return;
+            }
+
+            elements.noRecords.classList.add('hidden');
+
+            records.forEach(record => {
+                const date = new Date(record.timestamp);
+                const timeString = date.toLocaleString('es-ES', { 
+                    day: '2-digit', month: '2-digit', year: '2-digit', 
+                    hour: '2-digit', minute: '2-digit', second: '2-digit' 
+                });
+
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-800 transition duration-150';
+                row.innerHTML = `
+                    <td class="px-3 py-3 whitespace-nowrap text-sm font-medium text-mu-accent">${record.type}</td>
+                    <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${record.server}</td>
+                    <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${record.map || 'N/A'}</td>
+                    <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-300">${record.coords}</td>
+                    <td class="px-3 py-3 whitespace-nowrap text-sm text-mu-primary font-semibold">${timeString}</td>
+                    <td class="px-3 py-3 whitespace-nowrap text-sm text-gray-400 font-semibold">${record.playerName || record.recordedBy.substring(0, 8) + '...'}</td>
+                `;
+                elements.recordsTableBody.appendChild(row);
+            });
+        }
+
+        // --- 5. Utilidad de Mensajes ---
+        function showMessage(msg, colorClass) {
+            elements.formMessage.textContent = msg;
+            elements.formMessage.className = `mt-4 text-center text-sm block`;
+            
+            elements.formMessage.classList.remove('text-mu-error', 'text-mu-primary', 'bg-mu-error/20', 'bg-mu-primary/20', 'p-2', 'rounded');
+            
+            if (colorClass) {
+                const bgColorClass = colorClass.replace('mu-', 'bg-mu-');
+                elements.formMessage.classList.add('text-white', `${bgColorClass}/20`, 'p-2', 'rounded');
+            } else {
+                elements.formMessage.classList.add('hidden');
+            }
+        }
+        
+        // Iniciar la aplicación de Firebase
+        initFirebase();
+    </script>
+</body>
+</html>
